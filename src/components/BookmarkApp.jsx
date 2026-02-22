@@ -123,6 +123,11 @@ const BookmarkApp = () => {
   }, [bookmarks, selectedBookmarkId, multiSelectedBookmarkIds]);
 
   useEffect(() => {
+    // PERF-03: Use cancelled flag + synchronous cleanup return to prevent:
+    // 1. setState after unmount (React warning + potential interference with re-mounted instance)
+    // 2. Subscription leak (async fn's cleanup return was never received by React)
+    let cancelled = false;
+    let unsub;
     const init = async () => {
       const preferred =
         typeof __use_firebase__ !== "undefined" && __use_firebase__
@@ -134,14 +139,16 @@ const BookmarkApp = () => {
         initialAuthToken,
       });
       await s.init();
+      if (cancelled) return;
       storeRef.current = s;
       const data = await s.list();
+      if (cancelled) return;
       setBookmarks(data);
       setIsLoading(false);
-      const unsub = s.subscribe((all) => setBookmarks(all));
-      return () => unsub?.();
+      unsub = s.subscribe((all) => { if (!cancelled) setBookmarks(all); });
     };
     init();
+    return () => { cancelled = true; unsub?.(); };
   }, []);
 
   // Apply theme
