@@ -7,13 +7,17 @@ export function createGeminiLLM({ apiKey = '', model = 'gemini-2.0-flash' } = {}
 
   return {
     name: 'gemini',
-    async generate(prompt) {
+    // SEC-02: API key sent via x-goog-api-key header instead of URL query param
+    // to prevent key exposure in browser history, server logs, and referrer headers.
+    async generate(prompt, signal) {
       const payload = { contents: [{ role: 'user', parts: [{ text: prompt }] }] };
-      const url = `${endpoint}?key=${apiKey || ''}`;
-      const res = await fetch(url, {
+      const headers = { 'Content-Type': 'application/json' };
+      if (apiKey) headers['x-goog-api-key'] = apiKey;
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
+        signal,
       });
       if (!res.ok) throw new Error(`Gemini API error ${res.status}`);
       const data = await res.json();
@@ -26,8 +30,10 @@ export function createGeminiLLM({ apiKey = '', model = 'gemini-2.0-flash' } = {}
       // If no API key, return fallback
       if (!apiKey) return fallback;
       try {
-        const url = `${listEndpoint}?key=${apiKey}`;
-        const res = await fetch(url, { method: 'GET' });
+        const res = await fetch(listEndpoint, {
+          method: 'GET',
+          headers: { 'x-goog-api-key': apiKey },
+        });
         if (!res.ok) return fallback;
         const data = await res.json();
         const names = (data?.models || [])

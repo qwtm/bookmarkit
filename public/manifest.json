@@ -13,11 +13,8 @@
   "background": {
     "service_worker": "background.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
-    }
-  ],
-  "permissions": ["storage", "tabs", "bookmarks"]
+  "permissions": ["storage", "tabs", "bookmarks"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com https://api.openai.com https://api.x.ai https://*.firebaseio.com https://firestore.googleapis.com"
+  }
 }
