@@ -1,7 +1,7 @@
 // Firebase implementation conforming to the common store interface
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, doc, onSnapshot, addDoc, setDoc, deleteDoc, writeBatch, query, getDocs, orderBy } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence, collection, doc, onSnapshot, addDoc, setDoc, deleteDoc, writeBatch, query, getDocs, orderBy } from 'firebase/firestore';
 
 export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken }) {
   let listeners = new Set();
@@ -37,11 +37,32 @@ export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken })
           }
         });
       });
-      // Subscribe to changes ordered by position (then title as tiebreaker)
-      unsubSnapshot = onSnapshot(query(collectionRef(), orderBy('position', 'asc'), orderBy('title', 'asc')), (snapshot) => {
-        const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-        notify(all);
-      });
+      // PERF-04: Enable offline persistence so the app works without network on startup.
+      // Requires composite index: position ASC, title ASC (see src/stores/FIREBASE_SETUP.md).
+      try {
+        await enableIndexedDbPersistence(db);
+      } catch (e) {
+        if (e.code === 'failed-precondition') {
+          // Multiple tabs open — persistence only works in one tab at a time.
+          console.warn('Firestore offline persistence unavailable: multiple tabs open.');
+        } else if (e.code === 'unimplemented') {
+          // Browser does not support IndexedDB.
+          console.warn('Firestore offline persistence unavailable: browser unsupported.');
+        }
+      }
+      // PERF-04: Subscribe to changes with error handler to detect auth/rules failures
+      unsubSnapshot = onSnapshot(
+        query(collectionRef(), orderBy('position', 'asc'), orderBy('title', 'asc')),
+        (snapshot) => {
+          const all = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          notify(all);
+        },
+        (error) => {
+          // PERF-04: Handle subscription errors (e.g., expired auth token, changed rules)
+          console.error('Firestore snapshot subscription error:', error);
+          notify([]);
+        }
+      );
     },
     async list() {
       const snap = await getDocs(query(collectionRef(), orderBy('position', 'asc'), orderBy('title', 'asc')));

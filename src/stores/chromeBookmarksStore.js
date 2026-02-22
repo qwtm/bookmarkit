@@ -69,15 +69,18 @@ export function createChromeBookmarksStore() {
   const listUnderRoot = async () => {
     const rootId = await ensureRootFolder();
     const results = [];
+    // PERF-02: Parallelize sibling folder traversal using Promise.all at each level
     const traverse = async (parentId, pathParts) => {
       const children = await chrome.bookmarks.getChildren(parentId);
+      const folderPromises = [];
       for (const child of children) {
         if (child.url) {
           results.push(toBookmark(child, pathParts.join("/")));
         } else {
-          await traverse(child.id, [...pathParts, child.title || ""]);
+          folderPromises.push(traverse(child.id, [...pathParts, child.title || ""]));
         }
       }
+      await Promise.all(folderPromises);
     };
     await traverse(rootId, []);
     return results;
@@ -222,29 +225,26 @@ export function createChromeBookmarksStore() {
     async bulkReplace(bookmarks) {
       const rootId = await ensureRootFolder();
       const children = await chrome.bookmarks.getChildren(rootId);
-      for (const child of children) {
-        if (child.url) await chrome.bookmarks.remove(child.id);
-      }
-      for (const b of bookmarks) {
-        await chrome.bookmarks.create({
-          parentId: rootId,
-          title: b.title || b.url,
-          url: b.url,
-        });
-      }
+      // PERF-02: Parallelize bookmark removal, then parallel creation
+      await Promise.all(
+        children.filter((c) => c.url).map((c) => chrome.bookmarks.remove(c.id).catch(() => {}))
+      );
+      const createdNodes = await Promise.all(
+        bookmarks.map((b) =>
+          chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
+        )
+      );
       await notify();
+      return createdNodes;
     },
     async bulkAdd(bookmarks) {
       const rootId = await ensureRootFolder();
-      const createdNodes = [];
-      for (const b of bookmarks) {
-        const node = await chrome.bookmarks.create({
-          parentId: rootId,
-          title: b.title || b.url,
-          url: b.url,
-        });
-        createdNodes.push(node);
-      }
+      // PERF-02: Create all bookmarks in parallel instead of sequentially
+      const createdNodes = await Promise.all(
+        bookmarks.map((b) =>
+          chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
+        )
+      );
       await notify();
       return createdNodes.map((n) => toBookmark(n));
     },

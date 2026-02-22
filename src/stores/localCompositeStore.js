@@ -25,29 +25,36 @@ function deleteMeta(id) {
   try { localStorage.removeItem(META_KEY_PREFIX + id); } catch { }
 }
 
-function mergeNodeWithMeta(node) {
-  const meta = readMeta(node.id);
+function mergeNodeWithMeta(node, meta) {
+  // PERF-01: Accept pre-loaded meta object to avoid per-bookmark localStorage.getItem calls in list()
+  const m = meta !== undefined ? meta : readMeta(node.id);
   return {
     ...node,
-    description: meta.description ?? node.description ?? '',
-    tags: meta.tags ?? node.tags ?? [],
-    rating: meta.rating ?? node.rating ?? 0,
-    faviconUrl: meta.faviconUrl ?? node.faviconUrl ?? '',
-    urlStatus: meta.urlStatus ?? node.urlStatus ?? 'valid',
-    createdAt: meta.createdAt ?? node.createdAt ?? '',
-    updatedAt: meta.updatedAt ?? node.updatedAt ?? '',
+    description: m.description ?? node.description ?? '',
+    tags: m.tags ?? node.tags ?? [],
+    rating: m.rating ?? node.rating ?? 0,
+    faviconUrl: m.faviconUrl ?? node.faviconUrl ?? '',
+    urlStatus: m.urlStatus ?? node.urlStatus ?? 'valid',
+    createdAt: m.createdAt ?? node.createdAt ?? '',
+    updatedAt: m.updatedAt ?? node.updatedAt ?? '',
     // Prefer stored folderId label when present, else underlying node folder
-    folderId: meta.folderId ?? node.folderId ?? '',
+    folderId: m.folderId ?? node.folderId ?? '',
   };
 }
 
 export function createLocalCompositeStore(options = {}) {
   const chromeStore = createChromeBookmarksStore(options);
   let listeners = new Set();
+  let notifyTimer = null;
 
-  const notify = async () => {
-    const all = await api.list();
-    listeners.forEach((cb) => cb(all));
+  // PERF-03: Debounce notify to prevent cascading list() calls on rapid Chrome bookmark events
+  const notify = () => {
+    if (notifyTimer) clearTimeout(notifyTimer);
+    notifyTimer = setTimeout(async () => {
+      notifyTimer = null;
+      const all = await api.list();
+      listeners.forEach((cb) => cb(all));
+    }, 50);
   };
 
   const api = {
@@ -60,7 +67,17 @@ export function createLocalCompositeStore(options = {}) {
     },
     async list() {
       const base = await chromeStore.list();
-      return base.map(mergeNodeWithMeta);
+      // PERF-01: Single pass over localStorage keys to build a meta Map,
+      // replacing N individual getItem calls with one scan.
+      const metaMap = new Map();
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(META_KEY_PREFIX)) {
+          const id = key.slice(META_KEY_PREFIX.length);
+          try { metaMap.set(id, JSON.parse(localStorage.getItem(key))); } catch {}
+        }
+      }
+      return base.map(node => mergeNodeWithMeta(node, metaMap.get(node.id) ?? {}));
     },
     /**
      * Reorder persisted bookmark order using underlying chrome store.
