@@ -3,7 +3,7 @@
 // ARCH-10: Renders contextual empty states depending on loading/search/results state.
 
 import React, { useCallback, useRef } from "react";
-import { List as FixedSizeList } from "react-window";
+import { FixedSizeList } from "react-window";
 import BookmarkCard from "./BookmarkCard.jsx";
 
 const ITEM_HEIGHT = 104; // px — approximate card height
