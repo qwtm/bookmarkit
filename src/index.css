@@ -1,3 +1,30 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --border: #d1d5db;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+}
+
+body {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.themed-input {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.themed-input:focus {
+  outline: none;
+  ring-color: var(--accent);
+}
