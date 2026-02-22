@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getStore, STORE_TYPES } from "../stores/index.js";
 import { createLLM, LLM_PROVIDERS } from "../llm/index.js";
+import { parseAgentResponse } from "../llm/parser.js";
 
 import HelpModal from "./HelpModal";
 import MessageModal from "./MessageModal";
@@ -48,6 +49,10 @@ const BookmarkApp = () => {
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
 
   const storeRef = useRef(null);
+  // ARCH-04: Rate limiting — prevent concurrent requests and stale response overwrites
+  const agentRequestIdRef      = useRef(0);       // monotonic request counter
+  const agentAbortControllerRef = useRef(null);   // AbortController for the in-flight request
+  const agentLastCallTimestampRef = useRef(0);    // timestamp of last agentEngine call (ms)
   // Runtime-selectable LLM provider (persisted)
   const [runtimeProvider, setRuntimeProvider] = useState(() => {
     try {
@@ -864,13 +869,29 @@ const BookmarkApp = () => {
   ]);
 
   // Agent engine (pluggable LLM)
+  // ARCH-01: Parsing delegated to parseAgentResponse() in src/llm/parser.js.
+  // ARCH-04: Rate limiting — 500ms minimum interval, in-flight request cancellation,
+  //          and request-ID guard to discard stale responses.
   const agentEngine = async (userQuery) => {
     if (!userQuery.trim()) return;
+
+    // ARCH-04: Enforce 500ms minimum interval between calls
+    const now = Date.now();
+    const elapsed = now - agentLastCallTimestampRef.current;
+    if (elapsed < 500) return;
+    agentLastCallTimestampRef.current = now;
+
+    // ARCH-04: Cancel any in-flight request and assign a new request ID
+    agentAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    agentAbortControllerRef.current = controller;
+    const requestId = ++agentRequestIdRef.current;
+
     setIsProcessing(true);
     setBookmarksToDelete([]);
     const prompt = `You are an agent for a bookmark application. Based on the user's input, determine which application action(s) to take. For simple queries, return a single JSON object. For combined or sequential queries, return an array of action objects. Assign each action a numeric "priority" (lower executes earlier). The executor will sort actions by this priority and ignore array order.
 
-    User Query: "${userQuery}"
+    User Query: <data>${userQuery}</data>
 
     Available Actions:
     - searchBookmarks: General search by term (parameters: {searchTerm: string})
@@ -917,51 +938,20 @@ const BookmarkApp = () => {
     const options = { ...globalOpts, ...runtimeOpts };
     const llm = createLLM(provider, options);
 
-    // Removed quick natural-language pre-parsing to always defer to the LLM for interpretation.
-
-    // Helper: extract JSON payload from text (supports fenced code blocks)
-    const extractJsonFromText = (text) => {
-      if (!text) return null;
-      // Prefer ```json fenced blocks, but also allow generic ``` fences
-      const fence = text.match(/```(?:json)?\n?([\s\S]*?)\n?```/i);
-      if (fence) return fence[1];
-      // If the whole text is likely JSON, return as-is
-      const trimmed = text.trim();
-      if (
-        (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-        (trimmed.startsWith("[") && trimmed.endsWith("]"))
-      ) {
-        return trimmed;
-      }
-      return null;
-    };
-
     try {
-      const responseText = await llm.generate(prompt);
+      // ARCH-04: Pass AbortSignal so fetchWithRetry (ARCH-02) can cancel the request
+      const responseText = await llm.generate(prompt, controller.signal);
+
+      // ARCH-04: Discard stale responses — a newer request has already taken over
+      if (requestId !== agentRequestIdRef.current) return;
+
       if (!responseText) throw new Error("No valid response from LLM.");
-      const extracted = extractJsonFromText(responseText) || responseText;
-      let parsed;
-      try {
-        parsed = JSON.parse(extracted);
-      } catch (e) {
-        // If the provider accidentally returned a full API wrapper (e.g., Gemini JSON), try to dig out the text
-        try {
-          const wrapper = JSON.parse(responseText);
-          const innerText =
-            wrapper?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-          const innerExtracted = extractJsonFromText(innerText) || innerText;
-          parsed = JSON.parse(innerExtracted);
-        } catch (_) {
-          throw e;
-        }
-      }
-      // Use the LLM's JSON directly. Expect an object or array of { action, parameters?, priority? }.
-      const stepsArray = Array.isArray(parsed) ? parsed : [parsed];
-      const steps = stepsArray.filter(
-        (s) => s && typeof s === "object" && typeof s.action === "string",
-      );
+
+      // ARCH-01: Delegate all parsing and validation to parseAgentResponse()
+      const steps = parseAgentResponse(responseText, provider);
       if (steps.length === 0)
         throw new Error("Unable to interpret agent response.");
+
       // Stack: append to previous plan unless reset/show-all is present
       const previous = Array.isArray(lastAction)
         ? lastAction
@@ -1005,12 +995,9 @@ const BookmarkApp = () => {
         }
       }
     } catch (error) {
+      // ARCH-04: Ignore AbortError — it means a newer request superseded this one
+      if (error.name === "AbortError") return;
       console.error("Agent engine error:", error);
-      setLastAction({
-        action: "error",
-        parameters: {},
-        reasoning: `Failed to process request: ${error.message}`,
-      });
       showCustomMessage(
         `Failed to process request via LLM: ${error.message}. Performing a general search instead. Check API key is set in options.`,
         "error",
@@ -1021,7 +1008,10 @@ const BookmarkApp = () => {
         reasoning: "Fallback search due to agent error.",
       });
     } finally {
-      setIsProcessing(false);
+      // Only clear processing state if this is still the active request
+      if (requestId === agentRequestIdRef.current) {
+        setIsProcessing(false);
+      }
     }
   };
 

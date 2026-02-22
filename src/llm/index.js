@@ -1,5 +1,14 @@
-// Lightweight LLM provider abstraction
-// Common interface: { generate(prompt: string): Promise<string> }
+// ARCH-05: Lightweight LLM provider abstraction with formal interface documentation.
+
+/**
+ * @typedef {Object} LLMProvider
+ * @property {string} name - Provider key (e.g. 'gemini', 'openai', 'ollama')
+ * @property {(prompt: string, signal?: AbortSignal) => Promise<string>} generate
+ *   Generate a text response from the given prompt.
+ *   `signal` is an optional AbortSignal for ARCH-04 request cancellation.
+ * @property {() => Promise<string[]>} listModels
+ *   Return the list of available model identifiers for this provider.
+ */
 
 import { createGeminiLLM } from './providers/geminiLLM.js';
 import { createOpenAILLM } from './providers/openaiLLM.js';

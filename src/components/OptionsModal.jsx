@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { LLM_PROVIDERS, createLLM } from "../llm/index.js";
 
+// ARCH-04: Module-level cache for listModels() results, keyed by "provider|apiKey|baseUrl".
+// A 5-minute TTL prevents hammering the models endpoint when the modal is repeatedly opened.
+const _modelsCache = {};
+const MODELS_CACHE_TTL = 5 * 60 * 1000;
+
 // Options modal that displays and allows changing the current LLM provider and its options
 const OptionsModal = ({
   provider,
@@ -18,7 +23,17 @@ const OptionsModal = ({
   const [modelsError, setModelsError] = useState("");
   const [showExample, setShowExample] = useState(false);
 
-  const fetchModels = async () => {
+  const fetchModels = async (forceRefresh = false) => {
+    // ARCH-04: Check module-level cache before making a network request
+    const cacheKey = `${provider}|${providerOptions.apiKey || ""}|${providerOptions.baseUrl || ""}`;
+    if (!forceRefresh) {
+      const cached = _modelsCache[cacheKey];
+      if (cached && Date.now() < cached.expiresAt) {
+        setModels(cached.models);
+        return;
+      }
+    }
+
     setIsLoadingModels(true);
     setModelsError("");
     try {
@@ -29,7 +44,10 @@ const OptionsModal = ({
       };
       const llm = createLLM(provider, opts);
       const list = (await llm.listModels?.()) || [];
-      setModels(Array.isArray(list) ? list : []);
+      const models = Array.isArray(list) ? list : [];
+      // Store in module-level cache with TTL
+      _modelsCache[cacheKey] = { models, expiresAt: Date.now() + MODELS_CACHE_TTL };
+      setModels(models);
     } catch (e) {
       setModels([]);
       setModelsError(e?.message || "Failed to load models");
@@ -141,7 +159,7 @@ const OptionsModal = ({
                     </label>
                     <button
                       type="button"
-                      onClick={fetchModels}
+                      onClick={() => fetchModels(true)}
                       className="text-xs text-accent hover:underline disabled:text-secondary-text"
                       disabled={isLoadingModels}
                       aria-label="Refresh model list"
@@ -226,7 +244,7 @@ const OptionsModal = ({
                     </label>
                     <button
                       type="button"
-                      onClick={fetchModels}
+                      onClick={() => fetchModels(true)}
                       className="text-xs text-accent hover:underline disabled:text-secondary-text"
                       disabled={isLoadingModels}
                       aria-label="Refresh model list"
