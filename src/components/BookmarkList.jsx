@@ -2,7 +2,7 @@
 // Only renders visible rows, allowing 1000+ bookmarks without DOM bloat.
 // ARCH-10: Renders contextual empty states depending on loading/search/results state.
 
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { FixedSizeList } from "react-window";
 import BookmarkCard from "./BookmarkCard.jsx";
 
@@ -76,6 +76,20 @@ const BookmarkList = React.memo(function BookmarkList({
   onImport,
 }) {
   const listRef = useRef(null);
+  const containerRef = useRef(null);
+  const [listHeight, setListHeight] = useState(500);
+
+  // Measure container height so FixedSizeList fills the available space.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      if (h > 0) setListHeight(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const renderRow = useCallback(
     ({ index, style }) => {
@@ -113,10 +127,10 @@ const BookmarkList = React.memo(function BookmarkList({
   }
 
   return (
-    <div role="list" aria-label="Bookmarks">
+    <div ref={containerRef} role="list" aria-label="Bookmarks" style={{ height: "100%" }}>
       <FixedSizeList
         ref={listRef}
-        height={Math.min(bookmarks.length * ITEM_HEIGHT, 600)}
+        height={listHeight}
         itemCount={bookmarks.length}
         itemSize={ITEM_HEIGHT}
         width="100%"

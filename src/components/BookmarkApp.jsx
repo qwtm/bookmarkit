@@ -460,7 +460,7 @@ const BookmarkApp = () => {
   }
 
   return (
-    <div className="min-h-screen font-sans" style={{ backgroundColor: "var(--bg-secondary)" }}>
+    <div className="h-screen overflow-hidden flex flex-col font-sans" style={{ backgroundColor: "var(--bg-secondary)" }}>
       {/* UX-06: Import progress bar */}
       {importProgress && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-accent text-white text-sm text-center py-2">
@@ -520,8 +520,8 @@ const BookmarkApp = () => {
         </div>
       </header>
 
-      <main className={`pb-8 transition-all duration-300 ${isHeaderVisible ? "pt-28" : "pt-4"}`} role="main">
-        <div className="max-w-4xl mx-auto px-4">
+      <main className={`flex-1 overflow-hidden flex flex-col transition-all duration-300 ${isHeaderVisible ? "pt-28" : "pt-4"}`} role="main">
+        <div className="flex-1 min-h-0 max-w-4xl w-full mx-auto px-4 flex flex-col">
           {/* Agent plan display */}
           {lastAction && (
             <div className={`mb-4 p-3 rounded-lg ${lastAction.action === "error" ? "bg-red-50 border border-red-200" : "bg-green-50 border border-green-200"}`} role="status">
@@ -555,7 +555,8 @@ const BookmarkApp = () => {
                 : `${displayedBookmarks.length} total bookmarks`}
           </div>
 
-          {/* ARCH-10: Empty state + PERF-06: virtualized list */}
+          {/* ARCH-10: Empty state + PERF-06: virtualized list — flex-1 fills remaining viewport height */}
+          <div className="flex-1 min-h-0 pb-4">
           <BookmarkList
             bookmarks={displayedBookmarks}
             selectedBookmarkId={selectedBookmarkId}
@@ -573,6 +574,7 @@ const BookmarkApp = () => {
             onAddNew={handleAddNewBookmark}
             onImport={handleImportExportOpen}
           />
+          </div>
         </div>
       </main>
 
