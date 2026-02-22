@@ -7,5 +7,17 @@ export default defineConfig(({ mode }) => ({
   build: {
     sourcemap: mode === 'development',
     minify: mode !== 'development',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // React runtime — stable, cache-friendly
+          'react-vendor': ['react', 'react-dom'],
+          // Firebase split by sub-package so each chunk stays under 500 kB
+          'firebase-app':       ['firebase/app'],
+          'firebase-auth':      ['firebase/auth'],
+          'firebase-firestore': ['firebase/firestore'],
+        },
+      },
+    },
   },
 }))
