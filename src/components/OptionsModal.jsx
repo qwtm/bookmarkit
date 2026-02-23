@@ -102,6 +102,18 @@ const OptionsModal = ({
               </svg>
             </button>
           </div>
+          {/* Read-only status: shows what provider + model will actually be used */}
+          <div className="mb-4 p-3 rounded-md bg-secondary-bg border border-border text-sm font-mono">
+            <span className="text-secondary-text">Active: </span>
+            <span className="text-primary-text font-semibold">{provider || "none"}</span>
+            {providerOptions.model && (
+              <>
+                <span className="text-secondary-text"> / </span>
+                <span className="text-primary-text">{providerOptions.model}</span>
+              </>
+            )}
+          </div>
+
           <div className="space-y-4">
             <div>
               <label
