@@ -339,6 +339,11 @@ const BookmarkApp = () => {
   }, [lastAction, persistReorder]);
 
   // ─── Agent engine ────────────────────────────────────────────────────────────
+  // agentEngineRef always points to the latest agentEngine closure so that
+  // handleSearchInputKeyDown (useCallback with [searchQuery] deps) never captures
+  // a stale runtimeProvider or runtimeProviderOptions.
+  const agentEngineRef = useRef(null);
+
   const agentEngine = async (userQuery) => {
     if (!userQuery.trim()) return;
     const now = Date.now();
@@ -397,13 +402,16 @@ const BookmarkApp = () => {
     }
   };
 
+  // Keep ref current on every render so handleSearchInputKeyDown never goes stale.
+  agentEngineRef.current = agentEngine;
+
   const handleSearchInputKeyDown = useCallback((e) => {
     if (e.key === "Enter") {
       const q = (searchQuery || "").trim().toLowerCase();
       if (q === "options") { setIsOptionsOpen(true); return; }
-      agentEngine(searchQuery);
+      agentEngineRef.current(searchQuery);
     }
-  }, [searchQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchQuery]); // agentEngineRef is a stable ref — no need to add to deps
 
   // ─── Import handlers ─────────────────────────────────────────────────────────
   const handleImportJson = useCallback(async (arr) => {
