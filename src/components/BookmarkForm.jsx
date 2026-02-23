@@ -63,7 +63,9 @@ const BookmarkForm = ({
       LLM_PROVIDERS.GEMINI;
     const globalOpts =
       (typeof __llm_options__ !== "undefined" && __llm_options__) || {};
-    const opts = { ...globalOpts, ...(providerOptions || {}) };
+    const merged = { ...globalOpts, ...(providerOptions || {}) };
+    // Strip empty strings so provider defaults (e.g. baseUrl) are used when unset
+    const opts = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== "" && v != null));
     return createLLM(resolvedProvider, opts);
   }, [provider, providerOptions]);
 

@@ -368,7 +368,10 @@ const BookmarkApp = () => {
     const provider = runtimeProvider || (typeof __llm_provider__ !== "undefined" && __llm_provider__) || LLM_PROVIDERS.GEMINI;
     const globalOpts = (typeof __llm_options__ !== "undefined" && __llm_options__) || {};
     const runtimeOpts = (runtimeProviderOptions && runtimeProviderOptions[provider]) || {};
-    const llm = createLLM(provider, { ...globalOpts, ...runtimeOpts });
+    const merged = { ...globalOpts, ...runtimeOpts };
+    // Strip empty strings so provider defaults (e.g. baseUrl) are used when unset
+    const llmOpts = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== "" && v != null));
+    const llm = createLLM(provider, llmOpts);
 
     try {
       const responseText = await llm.generate(prompt, controller.signal);
