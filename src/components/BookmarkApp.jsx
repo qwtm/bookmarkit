@@ -139,6 +139,27 @@ const BookmarkApp = () => {
       .catch(() => ({ status: "invalid", redirectUrl: null }));
   }, []);
 
+  // ─── Background URL validation on select ────────────────────────────────────
+  // When a bookmark is selected, silently validate its URL and auto-save if the
+  // status or URL has changed (e.g. 404 discovered, or a redirect destination).
+  // Skips bookmarks where the user explicitly set urlStatus="ignored".
+  useEffect(() => {
+    if (!selectedBookmarkId) return;
+    const bookmark = bookmarksRef.current.find((b) => b.id === selectedBookmarkId);
+    if (!bookmark?.url || bookmark.urlStatus === "ignored") return;
+
+    let cancelled = false;
+    fetchUrlStatus(bookmark.url).then(({ status, redirectUrl }) => {
+      if (cancelled) return;
+      const newUrl = redirectUrl || bookmark.url;
+      if (newUrl !== bookmark.url || status !== bookmark.urlStatus) {
+        storeRef.current?.update(bookmark.id, { url: newUrl, urlStatus: status });
+      }
+    }).catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [selectedBookmarkId, fetchUrlStatus]); // bookmarksRef + storeRef are refs, no dep needed
+
   // ─── Displayed bookmarks (PERF-08: precise deps, ARCH-10: empty state handled in BookmarkList) ─
   const displayedBookmarks = useMemo(() => {
     const processed = applyAgentPlan(lastAction, bookmarks).map((b) =>
