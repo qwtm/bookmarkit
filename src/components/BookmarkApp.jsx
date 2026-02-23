@@ -252,6 +252,9 @@ const BookmarkApp = () => {
   // ─── Keyboard shortcuts ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKeyDown = async (e) => {
+      const tag = e.target?.tagName?.toLowerCase();
+      const isTypingContext = ["input", "textarea", "select"].includes(tag) || e.target?.isContentEditable;
+      if (isTypingContext) return;
       if (e.key === "Escape") { setSelectedBookmarkId(null); setMultiSelectedBookmarkIds([]); setBookmarksToDelete([]); }
       if (e.key === "h" || e.key === "H") setIsHeaderVisible((prev) => !prev);
       if (e.key === "c" && selectedBookmarkIdRef.current) {
