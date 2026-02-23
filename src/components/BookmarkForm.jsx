@@ -26,7 +26,6 @@ const BookmarkForm = ({
   );
   // UX-02: Split into 4 distinct states so spinner only shows during active validation
   const [currentUrlValidity, setCurrentUrlValidity] = useState("idle"); // 'idle', 'checking', 'valid', 'invalid'
-  const [hasUrlInputChanged, setHasUrlInputChanged] = useState(false);
 
   // UX-01: Error state for LLM suggestion failures
   const [descriptionError, setDescriptionError] = useState("");
@@ -132,9 +131,6 @@ const BookmarkForm = ({
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name === "url" && !hasUrlInputChanged) {
-      setHasUrlInputChanged(true);
-    }
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -271,7 +267,6 @@ const BookmarkForm = ({
           >
             URL
           </label>
-          {/* UX-02: Relative wrapper for spinner positioning */}
           <div className="relative">
             <input
               type="url"
@@ -279,60 +274,52 @@ const BookmarkForm = ({
               name="url"
               value={formData.url}
               onChange={handleChange}
-              // A11Y-01: aria-invalid and aria-describedby for screen reader feedback
               aria-invalid={currentUrlValidity === "invalid" && !ignoreUrlValidation}
               aria-describedby="url-validation-msg"
-              className={`w-full px-3 py-2 border rounded-md focus:ring-accent focus:border-accent themed-input ${
+              className={`w-full pl-3 pr-10 py-2 border rounded-md focus:ring-accent focus:border-accent themed-input ${
                 currentUrlValidity === "invalid" && !ignoreUrlValidation
-                  ? "border-red-500"
-                  : currentUrlValidity === "valid"
+                  ? "border-yellow-400"
+                  : currentUrlValidity === "valid" || ignoreUrlValidation
                     ? "border-green-500"
                     : "border-border"
               }`}
               required
             />
-            {/* UX-02: Inline spinner during active validation */}
+            {/* Spinner while checking */}
             {currentUrlValidity === "checking" && formData.url && (
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-accent" />
               </div>
             )}
-            {/* UX-02: Inline checkmark when valid */}
+            {/* Green checkmark when valid */}
             {currentUrlValidity === "valid" && !ignoreUrlValidation && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500 text-sm">✓</div>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">✓</div>
             )}
-          </div>
-          {/* A11Y-01: role="alert" region for screen reader announcements of validation state */}
-          <span id="url-validation-msg" role="alert" className="sr-only">
-            {currentUrlValidity === "invalid" && !ignoreUrlValidation
-              ? "URL appears to be unreachable."
-              : ""}
-          </span>
-          {/* UX-02: Visible error text when invalid */}
-          {currentUrlValidity === "invalid" && !ignoreUrlValidation && (
-            <p className="mt-1 text-sm text-red-600">URL appears to be unreachable.</p>
-          )}
-          {hasUrlInputChanged &&
-            (ignoreUrlValidation || currentUrlValidity !== "valid") && (
-              // UX-02: Renamed from "Ignore checking" to "Save anyway" with tooltip
+            {/* Green arrow when invalid — click to ignore and mark OK */}
+            {currentUrlValidity === "invalid" && !ignoreUrlValidation && (
               <button
                 type="button"
-                onClick={() => setIgnoreUrlValidation((v) => !v)}
-                title="This URL failed validation but you can still save it"
-                // A11Y-01: aria-pressed and descriptive aria-label
-                aria-pressed={ignoreUrlValidation}
-                aria-label="Bypass URL validation for this bookmark"
-                className={`mt-2 px-3 py-1 text-white text-sm rounded-md transition-colors duration-200 ${
-                  ignoreUrlValidation
-                    ? "bg-green-500 hover:bg-green-600"
-                    : currentUrlValidity === "checking"
-                      ? "bg-yellow-500 hover:bg-yellow-600"
-                      : "bg-red-500 hover:bg-red-600"
-                }`}
+                onClick={() => setIgnoreUrlValidation(true)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-green-600 hover:text-green-700 focus:outline-none"
+                title="Accept URL and save anyway"
+                aria-label="Ignore URL validation error"
               >
-                {ignoreUrlValidation ? "Ignored" : "Save anyway"}
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </button>
             )}
+            {/* Green checkmark when ignored */}
+            {ignoreUrlValidation && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">✓</div>
+            )}
+          </div>
+          <span id="url-validation-msg" role="alert" className="sr-only">
+            {currentUrlValidity === "invalid" && !ignoreUrlValidation ? "URL not found." : ""}
+          </span>
+          {currentUrlValidity === "invalid" && !ignoreUrlValidation && (
+            <p className="mt-1 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-1">Not Found</p>
+          )}
         </div>
         <div>
           <label
