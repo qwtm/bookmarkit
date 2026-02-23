@@ -22,10 +22,21 @@ const OptionsModal = ({
   const [models, setModels] = useState([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState("");
+  const [baseUrlError, setBaseUrlError] = useState("");
   const [showExample, setShowExample] = useState(false);
 
   const debouncedApiKey = useDebounce(providerOptions.apiKey || "", 600);
   const debouncedBaseUrl = useDebounce(providerOptions.baseUrl || "", 600);
+
+  const isValidBaseUrl = (url) => {
+    if (!url) return true; // empty = use provider default, always OK
+    try {
+      const parsed = new URL(url);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  };
 
   const fetchModels = async (forceRefresh = false) => {
     // ARCH-04: Check module-level cache before making a network request
@@ -61,6 +72,11 @@ const OptionsModal = ({
   };
 
   useEffect(() => {
+    if (!isValidBaseUrl(debouncedBaseUrl)) {
+      setBaseUrlError("Not a Valid Url Pattern");
+      return;
+    }
+    setBaseUrlError("");
     fetchModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, debouncedApiKey, debouncedBaseUrl]);
@@ -242,6 +258,9 @@ const OptionsModal = ({
                         onChangeOptions?.({ baseUrl: e.target.value })
                       }
                     />
+                    {baseUrlError && (
+                      <p className="mt-1 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-1">{baseUrlError}</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -323,6 +342,9 @@ const OptionsModal = ({
                       onChangeOptions?.({ baseUrl: e.target.value })
                     }
                   />
+                  {baseUrlError && (
+                    <p className="mt-1 text-sm text-yellow-700 bg-yellow-50 border border-yellow-200 rounded px-2 py-1">{baseUrlError}</p>
+                  )}
                 </div>
               </div>
             )}
