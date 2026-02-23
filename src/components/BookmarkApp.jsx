@@ -620,6 +620,8 @@ const BookmarkApp = () => {
                 onSave={handleSaveBookmark}
                 onDelete={handleDeleteBookmark}
                 fetchUrlStatus={async () => "valid"}
+                provider={runtimeProvider}
+                providerOptions={runtimeProviderOptions[runtimeProvider] || {}}
               />
             </div>
           </div>

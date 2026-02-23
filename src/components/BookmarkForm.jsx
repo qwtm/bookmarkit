@@ -7,6 +7,8 @@ const BookmarkForm = ({
   onSave,
   onDelete,
   fetchUrlStatus,
+  provider,
+  providerOptions,
 }) => {
   const [formData, setFormData] = useState({
     title: bookmark?.title || "",
@@ -52,15 +54,18 @@ const BookmarkForm = ({
     if (tagsErrorTimer.current) clearTimeout(tagsErrorTimer.current);
   }, []);
 
-  // Create a single LLM instance using the app's configured provider/options (same pattern as BookmarkApp)
+  // Create LLM from runtime provider/options passed down from BookmarkApp.
+  // Falls back to build-time globals so the form works even if props aren't supplied.
   const llm = useMemo(() => {
-    const provider =
+    const resolvedProvider =
+      provider ||
       (typeof __llm_provider__ !== "undefined" && __llm_provider__) ||
       LLM_PROVIDERS.GEMINI;
-    const options =
+    const globalOpts =
       (typeof __llm_options__ !== "undefined" && __llm_options__) || {};
-    return createLLM(provider, options);
-  }, []);
+    const opts = { ...globalOpts, ...(providerOptions || {}) };
+    return createLLM(resolvedProvider, opts);
+  }, [provider, providerOptions]);
 
   // Helpers to normalize LLM text outputs
   const cleanLLMText = (text) => {
