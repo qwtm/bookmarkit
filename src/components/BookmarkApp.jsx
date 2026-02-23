@@ -118,6 +118,19 @@ const BookmarkApp = () => {
   // PERF-07: Debounce search for displayedBookmarks (input updates instantly; search updates after 300ms)
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
+  // ─── URL validation ──────────────────────────────────────────────────────────
+  // HEAD + no-cors: no CORS preflight needed, any server response = reachable,
+  // network error (DNS fail, timeout, connection refused) = invalid.
+  const fetchUrlStatus = useCallback(async (url) => {
+    if (!url) return "idle";
+    try {
+      await fetch(url, { method: "HEAD", mode: "no-cors", signal: AbortSignal.timeout(5000) });
+      return "valid";
+    } catch {
+      return "invalid";
+    }
+  }, []);
+
   // ─── Displayed bookmarks (PERF-08: precise deps, ARCH-10: empty state handled in BookmarkList) ─
   const displayedBookmarks = useMemo(() => {
     const processed = applyAgentPlan(lastAction, bookmarks).map((b) =>
@@ -634,7 +647,7 @@ const BookmarkApp = () => {
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSaveBookmark}
                 onDelete={handleDeleteBookmark}
-                fetchUrlStatus={async () => "valid"}
+                fetchUrlStatus={fetchUrlStatus}
                 provider={runtimeProvider}
                 providerOptions={runtimeProviderOptions[runtimeProvider] || {}}
               />
