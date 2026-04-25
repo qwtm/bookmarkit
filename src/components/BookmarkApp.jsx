@@ -4,7 +4,7 @@ import { createLLM, LLM_PROVIDERS } from "../llm/index.js";
 import { parseAgentResponse } from "../llm/parser.js";
 import { classifyLLMError } from "../llm/errors.js";
 import { applyAgentPlan } from "../utils/bookmarkFilters.js";
-import { findDuplicateIds } from "../utils/duplicates.js";
+import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useDebounce } from "../hooks/useDebounce.js";
@@ -18,6 +18,19 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import OptionsModal from "./OptionsModal";
 import BookmarkList from "./BookmarkList.jsx";
 
+const getImportResultMessage = (importedCount, skippedCount, emptyMessage) => {
+  if (importedCount > 0) {
+    const skipped = skippedCount > 0 ? ` Skipped ${skippedCount} duplicate(s).` : "";
+    return { message: `Imported ${importedCount} bookmark(s).${skipped}`, type: "success" };
+  }
+
+  if (skippedCount > 0) {
+    return { message: `No new bookmarks imported. Skipped ${skippedCount} duplicate(s).`, type: "info" };
+  }
+
+  return { message: emptyMessage, type: "info" };
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 const BookmarkApp = () => {
@@ -28,7 +41,7 @@ const BookmarkApp = () => {
   const {
     bookmarks, isLoading, importProgress,
     storeRef, init, saveBookmark, deleteBookmark, deleteBookmarks,
-    appendBookmarks, persistSortedOrder,
+    saveAllBookmarks, appendBookmarks, persistSortedOrder,
   } = useBookmarkStore();
 
   // Init store on mount
@@ -472,13 +485,23 @@ const BookmarkApp = () => {
   }, [searchQuery]); // agentEngineRef is a stable ref — no need to add to deps
 
   // ─── Import handlers ─────────────────────────────────────────────────────────
-  const handleImportJson = useCallback(async (arr) => {
-    await appendBookmarks(arr, showCustomMessage);
+  const handleImportJson = useCallback(async (arr, replaceAll = false) => {
+    const existing = replaceAll ? [] : bookmarks;
+    const { bookmarks: bookmarksToImport, skippedCount } = filterDuplicateImports(arr, existing);
+
+    if (replaceAll) {
+      await saveAllBookmarks(bookmarksToImport);
+    } else if (bookmarksToImport.length > 0) {
+      await appendBookmarks(bookmarksToImport);
+    }
+
+    const result = getImportResultMessage(bookmarksToImport.length, skippedCount, "No bookmarks found in the import data.");
+    showCustomMessage(result.message, result.type);
     handleImportExportClose();
     setLastAction(null);
-  }, [appendBookmarks, handleImportExportClose]);
+  }, [appendBookmarks, bookmarks, handleImportExportClose, saveAllBookmarks]);
 
-  const handleImportHtml = useCallback(async (html) => {
+  const handleImportHtml = useCallback(async (html, replaceAll = false) => {
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
@@ -499,19 +522,30 @@ const BookmarkApp = () => {
           updatedAt: new Date().toISOString(),
         };
       });
+
+      const existing = replaceAll ? [] : bookmarks;
+      const { bookmarks: bookmarksToImport, skippedCount } = filterDuplicateImports(importedBookmarks, existing);
+
+      if (replaceAll) {
+        await saveAllBookmarks(bookmarksToImport);
+      } else if (bookmarksToImport.length > 0) {
+        await appendBookmarks(bookmarksToImport);
+      }
+
       if (importedBookmarks.length > 0) {
-        await appendBookmarks(importedBookmarks, showCustomMessage);
-        setLastAction(null);
+        const result = getImportResultMessage(bookmarksToImport.length, skippedCount, "No bookmarks found in the imported HTML.");
+        showCustomMessage(result.message, result.type);
       } else {
         showCustomMessage("No bookmarks found in the imported HTML.", "info");
       }
+      setLastAction(null);
     } catch (e) {
       console.error("Error parsing HTML bookmarks:", e);
       showCustomMessage("Failed to parse HTML bookmarks.", "error");
     } finally {
       handleImportExportClose();
     }
-  }, [appendBookmarks, handleImportExportClose]);
+  }, [appendBookmarks, bookmarks, handleImportExportClose, saveAllBookmarks]);
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   if (isLoading) {

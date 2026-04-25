@@ -93,19 +93,9 @@ const ImportExportContent = ({
         } else {
           await onImportJson(pendingImport.data, false);
         }
-        showMessage(
-          pendingImport.count > 0
-            ? `Imported ${pendingImport.count} bookmarks successfully.`
-            : "No bookmarks found in the import data.",
-          pendingImport.count > 0 ? "success" : "info",
-        );
       } else {
-        // HTML import — await so success message is only shown after completion
+        // HTML import — await so status is only shown after completion
         await onImportHtml(pendingImport.data, replaceAll);
-        showMessage(
-          "Bookmarks imported successfully from HTML.",
-          "success",
-        );
       }
     } catch {
       showMessage("Import failed. Please check the file format and try again.", "error");
