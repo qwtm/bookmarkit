@@ -11,8 +11,17 @@
 
 import { normalizeTag } from "./bookmarkFilters.js";
 
-/** The fields a bulk edit is allowed to touch. Deliberately not title or url. */
-const FIELDS = ["tags", "folderId", "rating"];
+/**
+ * The fields a bulk write is allowed to touch. Deliberately not title or url.
+ *
+ * `description` is not something the bar offers — writing one description across
+ * a selection makes no sense — but the organizer (#44) proposes them one by one
+ * and applies through this same path, so undo has to know to capture it.
+ */
+const FIELDS = ["tags", "folderId", "rating", "description"];
+
+/** What "absent" looks like per field, for restoring one. */
+const EMPTY = Object.freeze({ tags: [], folderId: "", rating: 0, description: "" });
 
 const asTagList = (value) => {
   const raw = Array.isArray(value) ? value : String(value ?? "").split(",");
@@ -119,7 +128,9 @@ export function previousValuesFor(patches = [], bookmarks = []) {
     if (!bookmark) continue;
     const before = { id: bookmark.id };
     for (const field of FIELDS) {
-      if (field in patch) before[field] = bookmark[field] ?? (field === "rating" ? 0 : "");
+      // A field the bookmark does not carry is restored to its own empty value,
+      // not to a blank string: undoing a first-ever tagging must write [] back.
+      if (field in patch) before[field] = bookmark[field] ?? EMPTY[field];
     }
     if (Object.keys(before).length > 1) previous.push(before);
   }

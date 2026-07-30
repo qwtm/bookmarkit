@@ -25,6 +25,7 @@ const ACTIONS = [
   "importBookmarks",
   "exportBookmarks",
   "removeDuplicates",
+  "organizeBookmarks({fields?})",
   "help",
   "findIncludes({field,value})",
   "findStartsWith({field,value})",

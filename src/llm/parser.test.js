@@ -35,6 +35,34 @@ describe("parseAgentResponse", () => {
     expect(parseAgentResponse(text)).toEqual([]);
   });
 
+  // #44: "clean up my bookmarks" means all three fields; anything else named is
+  // dropped rather than defaulted, so a plan cannot ask to rewrite titles.
+  it("keeps the organize fields it knows and drops the rest", () => {
+    const text =
+      '[{"action":"organizeBookmarks","parameters":{"fields":["tags","title","folderId"]}}]';
+    expect(parseAgentResponse(text)).toEqual([
+      { action: "organizeBookmarks", parameters: { fields: ["tags", "folderId"] } },
+    ]);
+  });
+
+  it("organizes everything when no field is named", () => {
+    expect(parseAgentResponse('[{"action":"organizeBookmarks"}]')).toEqual([
+      { action: "organizeBookmarks", parameters: { fields: ["tags", "folderId", "description"] } },
+    ]);
+  });
+
+  it("reads `folder` as the folder field, which is what the wording suggests", () => {
+    const text = '[{"action":"organizeBookmarks","parameters":{"fields":["folder"]}}]';
+    expect(parseAgentResponse(text)).toEqual([
+      { action: "organizeBookmarks", parameters: { fields: ["folderId"] } },
+    ]);
+  });
+
+  it("refuses a tidy-up of only fields it cannot touch, rather than doing the rest", () => {
+    const text = '[{"action":"organizeBookmarks","parameters":{"fields":["title"]}}]';
+    expect(parseAgentResponse(text)).toEqual([]);
+  });
+
   it("preserves a numeric priority", () => {
     const text = '[{"action":"resetSearch","priority":2}]';
     expect(parseAgentResponse(text)).toEqual([
