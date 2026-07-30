@@ -39,6 +39,17 @@ const SCOPE_VALUES = new Set(["current", "all"]);
 const COMPARATOR_VALUES = new Set(["gte", "lte", "eq"]);
 const ORGANIZE_FIELD_VALUES = new Set(["tags", "folderId", "description"]);
 
+// The names a model reaches for when it means one of those. "Suggest folders" is
+// the wording the README uses, so `folder` arriving instead of `folderId` is the
+// request being understood, not an unsupported field.
+const ORGANIZE_FIELD_ALIASES = new Map([
+  ["folder", "folderId"],
+  ["folders", "folderId"],
+  ["folderpath", "folderId"],
+  ["tag", "tags"],
+  ["descriptions", "description"],
+]);
+
 // ─── Utility coercions ────────────────────────────────────────────────────────
 
 function toStringArray(val) {
@@ -75,14 +86,21 @@ const ACTION_SCHEMAS = {
   // a plan that rewrites titles.
   organizeBookmarks(p) {
     const errors = [];
-    const asked = Array.isArray(p?.fields) ? p.fields : p?.fields != null ? [p.fields] : [];
+    const named = p?.fields != null;
+    const asked = Array.isArray(p?.fields) ? p.fields : named ? [p.fields] : [];
     const fields = [];
     for (const field of asked) {
-      if (ORGANIZE_FIELD_VALUES.has(field)) fields.push(field);
-      else errors.push(`Unknown organize field "${field}", ignored`);
+      const name = ORGANIZE_FIELD_ALIASES.get(String(field).trim().toLowerCase()) ?? field;
+      if (!ORGANIZE_FIELD_VALUES.has(name)) {
+        errors.push(`Unknown organize field "${field}", ignored`);
+        continue;
+      }
+      if (!fields.includes(name)) fields.push(name);
     }
-    // No usable field named means all of them, which is what "clean up my
-    // bookmarks" asks for.
+    // Naming no fields means all of them, which is what "clean up my bookmarks"
+    // asks for. Naming only fields this cannot touch is a refusal, though — "tidy
+    // up the titles" must do nothing rather than propose tags instead.
+    if (named && fields.length === 0) return { valid: false, sanitized: {}, errors };
     return {
       valid: true,
       sanitized: { fields: fields.length > 0 ? fields : [...ORGANIZE_FIELD_VALUES] },

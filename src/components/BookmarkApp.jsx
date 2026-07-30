@@ -347,16 +347,20 @@ const BookmarkApp = () => {
     showMessage: showCustomMessage,
   });
 
+  // The list is passed in rather than read from state: a plan that searches and
+  // then organizes runs both in the same tick, before React has re-rendered with
+  // the new plan, so `displayedBookmarks` would still be the previous view and the
+  // tidy-up would range over bookmarks the query had just excluded.
   const handleOrganize = useCallback(
-    async (fields) => {
-      const rows = await organizer.run(displayedBookmarks, fields ? { fields } : {});
+    async (list, fields) => {
+      const rows = await organizer.run(list, fields ? { fields } : {});
       if (rows.length === 0) {
         showCustomMessage("Nothing to change — these bookmarks are already organized.", "info");
         return;
       }
       setProposedChanges(rows);
     },
-    [organizer, displayedBookmarks]
+    [organizer]
   );
 
   const handleApplyOrganize = useCallback(
@@ -528,6 +532,9 @@ const BookmarkApp = () => {
   // before the next one starts.
   const runPlanSteps = useCallback(
     async (steps, plan) => {
+      // What this plan shows, computed from the plan itself for the same reason
+      // `handleOrganize` takes a list: the render carrying it has not happened yet.
+      const inView = () => applyManualFilters(effectiveFilters, applyAgentPlan(plan, bookmarks));
       for (const step of sortStepsByPriority(steps)) {
         if (step.action === "help") setIsHelpModalOpen(true);
         if (step.action === "importBookmarks" || step.action === "exportBookmarks")
@@ -539,11 +546,12 @@ const BookmarkApp = () => {
             setIsDeleteConfirmModalOpen(true);
           } else showCustomMessage("No duplicate bookmarks found in the current view.", "info");
         }
-        if (step.action === "organizeBookmarks") await handleOrganize(step.parameters?.fields);
+        if (step.action === "organizeBookmarks")
+          await handleOrganize(inView(), step.parameters?.fields);
         if (REORDER_ACTIONS.includes(step.action)) await handlePersistReorderFromAgent(step);
       }
     },
-    [bookmarks, handleOrganize, handlePersistReorderFromAgent]
+    [bookmarks, effectiveFilters, handleOrganize, handlePersistReorderFromAgent]
   );
 
   const { isProcessing, run: runAgent } = useAgentEngine({

@@ -51,6 +51,18 @@ describe("parseAgentResponse", () => {
     ]);
   });
 
+  it("reads `folder` as the folder field, which is what the wording suggests", () => {
+    const text = '[{"action":"organizeBookmarks","parameters":{"fields":["folder"]}}]';
+    expect(parseAgentResponse(text)).toEqual([
+      { action: "organizeBookmarks", parameters: { fields: ["folderId"] } },
+    ]);
+  });
+
+  it("refuses a tidy-up of only fields it cannot touch, rather than doing the rest", () => {
+    const text = '[{"action":"organizeBookmarks","parameters":{"fields":["title"]}}]';
+    expect(parseAgentResponse(text)).toEqual([]);
+  });
+
   it("preserves a numeric priority", () => {
     const text = '[{"action":"resetSearch","priority":2}]';
     expect(parseAgentResponse(text)).toEqual([
