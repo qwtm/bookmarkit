@@ -133,6 +133,7 @@ describe("reading views back (#49)", () => {
       excludeTags: ["ok"],
       minRating: 5,
       brokenOnly: false,
+      neverOpened: false,
       folder: "Work/Project A",
       sortBy: "",
       order: "asc",

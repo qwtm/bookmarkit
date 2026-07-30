@@ -21,6 +21,8 @@ const KNOWN_ACTIONS = new Set([
   "findWithTags",
   "filterByRating",
   "findBrokenLinks",
+  "findNeverOpened",
+  "weeklyDigest",
   "sortBookmarks",
   "limitResults",
   "limitFirst",
@@ -80,6 +82,9 @@ const ACTION_SCHEMAS = {
   removeDuplicates: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
   // #47: takes no parameters — the status it filters on was written by the sweep.
   findBrokenLinks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+  // #50: both take no parameters — one narrows the view, one opens the digest.
+  findNeverOpened: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+  weeklyDigest: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
 
   // #44: which of tags, folder and description to propose. Anything else asked
   // for is dropped rather than defaulted, so "clean up the titles" cannot become

@@ -136,3 +136,19 @@ describe("parseAgentResponse", () => {
     ]);
   });
 });
+
+// #50: two actions with nothing to validate — one narrows the view, one opens the
+// digest — so the only question is whether they survive the whitelist.
+describe("the week's actions (#50)", () => {
+  it("accepts a request for what was never opened", () => {
+    expect(parseAgentResponse('[{"action":"findNeverOpened","parameters":{}}]')).toEqual([
+      { action: "findNeverOpened", parameters: {} },
+    ]);
+  });
+
+  it("accepts a request for the digest", () => {
+    expect(parseAgentResponse('[{"action":"weeklyDigest"}]')).toEqual([
+      { action: "weeklyDigest", parameters: {} },
+    ]);
+  });
+});

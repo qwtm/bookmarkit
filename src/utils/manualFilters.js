@@ -12,6 +12,7 @@ import {
 } from "./bookmarkFilters.js";
 import { findBrokenLinks } from "./linkHealth.js";
 import { findInFolder } from "./folderTree.js";
+import { findNeverOpened } from "./openHistory.js";
 
 export const EMPTY_FILTERS = Object.freeze({
   text: "",
@@ -24,6 +25,8 @@ export const EMPTY_FILTERS = Object.freeze({
   // folder in the tree is a manual filter like any other, which is what makes it
   // combinable with the rest and savable as a view.
   folder: "",
+  // #50: only what nothing has opened.
+  neverOpened: false,
   sortBy: "",
   order: "asc",
 });
@@ -41,6 +44,7 @@ export const SORT_FIELDS = Object.freeze([
   { value: "rating", label: "Rating" },
   { value: "folderId", label: "Folder" },
   { value: "createdAt", label: "Date added" },
+  { value: "lastOpenedAt", label: "Last opened" },
   { value: "updatedAt", label: "Date modified" },
 ]);
 
@@ -75,6 +79,7 @@ export function hasActiveFilters(filters) {
     filters.excludeTags?.length ||
     filters.minRating > 0 ||
     filters.brokenOnly ||
+    filters.neverOpened ||
     filters.folder ||
     filters.sortBy
   );
@@ -124,6 +129,7 @@ const NARROWERS = [
       ? filterByRating({ minRating: filters.minRating, comparator: "gte" }, list)
       : list,
   (filters, list) => (filters.brokenOnly ? findBrokenLinks(list) : list),
+  (filters, list) => (filters.neverOpened ? findNeverOpened(list) : list),
   (filters, list) => (filters.folder ? findInFolder(filters.folder, list) : list),
 ];
 

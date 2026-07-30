@@ -3,6 +3,7 @@
 // PERF-08: Defined outside the component so references are stable across renders.
 
 import { findBrokenLinks } from "./linkHealth.js";
+import { findNeverOpened } from "./openHistory.js";
 import { mergeSemanticMatches } from "./semanticSearch.js";
 
 export const searchBookmarks = (searchTerm, list) => {
@@ -175,6 +176,7 @@ export const DISPLAY_ACTIONS = new Set([
   "findWithTags",
   "filterByRating",
   "findBrokenLinks",
+  "findNeverOpened",
   "sortBookmarks",
   "limitResults",
   "limitFirst",
@@ -231,6 +233,11 @@ export const applyAgentPlan = (plan, list) => {
         break;
       case "findBrokenLinks":
         currentResults = findBrokenLinks(currentResults);
+        break;
+      // #50: the bookmarks nothing has opened. Like broken links, this reads a
+      // field the app wrote itself, so it needs no model and no network.
+      case "findNeverOpened":
+        currentResults = findNeverOpened(currentResults);
         break;
       case "filterByRating":
         currentResults = filterByRating(parameters || {}, currentResults);

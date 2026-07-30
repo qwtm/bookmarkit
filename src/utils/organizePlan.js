@@ -15,6 +15,7 @@
 //   what a bookmark points at would be changing which page it is, and the diff
 //   would be reviewing something else than the user asked about.
 
+import { extractJsonArray } from "../llm/jsonArray.js";
 import { normalizeTag } from "./bookmarkFilters.js";
 import { folderSegments } from "./folderTree.js";
 
@@ -134,21 +135,6 @@ function proposalFrom(entry, folders) {
   if (description) proposal.description = description;
 
   return Object.keys(proposal).length > 0 ? proposal : null;
-}
-
-function extractJsonArray(text) {
-  if (typeof text !== "string") return null;
-  const fenced = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/iu);
-  const body = (fenced ? fenced[1] : text).trim();
-  const start = body.indexOf("[");
-  const end = body.lastIndexOf("]");
-  if (start === -1 || end <= start) return null;
-  try {
-    const parsed = JSON.parse(body.slice(start, end + 1));
-    return Array.isArray(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 const sameTags = (before = [], after = []) =>

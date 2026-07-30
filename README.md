@@ -441,6 +441,30 @@ the agent for your broken links) shows the results.
   the URL checks are guarded against, so what to do about a dead link is left to
   you: fix it in the form, or select the broken ones and delete them together.
 
+## The weekly digest
+
+**Digest** in the header answers the question a large collection eventually
+raises: what did I save this week, and what have I been ignoring? It reports three
+things.
+
+- **Saved this week**, grouped into named themes. The grouping is the only part a
+  provider does; with none configured the additions are grouped by the folder or
+  tag they already carry, so the digest works without AI.
+- **Never opened** — saved more than a week ago and never opened since. **Show
+  never opened** turns this into the filter-bar toggle of the same name, so you
+  can work through them with sorting, bulk editing and the rest.
+- **Untagged** — filed in a hurry. **Triage the untagged** hands exactly those to
+  the organizer for tag suggestions, with the same diff to review.
+
+Opening a bookmark from anywhere in the app records when — this is the only thing
+Bookmarkit observes about a bookmark rather than being told, it stays on your
+device with the rest of your bookmarks, and it is what “never opened” and the
+**Last opened** sort read. Nothing recorded means never opened, so bookmarks saved
+before this existed all read as never opened until you open them.
+
+Neither the additions nor the neglected list nags about the last week's arrivals:
+something saved yesterday has not been ignored.
+
 ## URL validation
 
 - The extension checks URLs with a HEAD request issued from the background service worker, which

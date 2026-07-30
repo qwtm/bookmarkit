@@ -234,3 +234,18 @@ describe("applyAgentPlan with semanticMatches (#46)", () => {
     expect(applyAgentPlan(plan, list).map((b) => b.id)).toEqual(["2"]);
   });
 });
+
+// #50: a plan can narrow the view to what nothing has opened, the same way it can
+// narrow to broken links — both read a field the app wrote for itself.
+describe("applyAgentPlan with findNeverOpened (#50)", () => {
+  const withHistory = [
+    { id: "1", title: "Read", url: "https://a.test", lastOpenedAt: "2026-07-01T00:00:00.000Z" },
+    { id: "2", title: "Untouched", url: "https://b.test", createdAt: "2026-01-01T00:00:00.000Z" },
+  ];
+
+  it("keeps only what nothing has opened", () => {
+    const shown = applyAgentPlan([{ action: "findNeverOpened", parameters: {} }], withHistory);
+
+    expect(shown.map((b) => b.id)).toEqual(["2"]);
+  });
+});

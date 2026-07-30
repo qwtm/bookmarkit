@@ -109,6 +109,17 @@ const FilterBar = React.memo(function FilterBar({
           Broken only
         </Button>
 
+        {/* #50: the other filter that reads something the app observed rather than
+            something a user typed. */}
+        <Button
+          type="button"
+          intent={filters.neverOpened ? "primary" : "secondary"}
+          onClick={() => onChange({ ...filters, neverOpened: !filters.neverOpened })}
+          aria-pressed={Boolean(filters.neverOpened)}
+        >
+          Never opened
+        </Button>
+
         <Select
           id="filter-sort"
           value={filters.sortBy}
