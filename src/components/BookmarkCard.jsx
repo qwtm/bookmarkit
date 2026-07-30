@@ -9,6 +9,7 @@ const BookmarkCard = React.memo(function BookmarkCard({
   isSelected,
   isMultiSelected,
   isPendingDelete,
+  remoteFavicons,
   onClick,
   onDoubleClick,
   onKeyDown,
@@ -27,6 +28,7 @@ const BookmarkCard = React.memo(function BookmarkCard({
       selected={isActive}
       pendingDelete={isPendingDelete}
       unreachable={isInvalid}
+      remoteFavicons={remoteFavicons}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={onClick}
       onDoubleClick={onDoubleClick}

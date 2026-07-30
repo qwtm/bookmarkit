@@ -161,6 +161,7 @@ function BookmarkRow({ index, style, data }) {
     onBookmarkDoubleClick,
     onBookmarkKeyDown,
     onRowHeightChange,
+    remoteFavicons,
   } = data;
   const bookmark = bookmarks[index - 1];
 
@@ -183,6 +184,7 @@ function BookmarkRow({ index, style, data }) {
           isSelected={selectedBookmarkId === bookmark.id}
           isMultiSelected={multiSelectedBookmarkIds.includes(bookmark.id)}
           isPendingDelete={bookmarksToDelete.includes(bookmark.id)}
+          remoteFavicons={remoteFavicons}
           onClick={(e) => onBookmarkClick(bookmark, e)}
           onDoubleClick={() => onBookmarkDoubleClick(bookmark)}
           onKeyDown={(e) => onBookmarkKeyDown(e, bookmark)}
@@ -245,6 +247,7 @@ const BookmarkList = React.memo(function BookmarkList({
   onCycleTag,
   onClearFilters,
   filterSummary,
+  remoteFavicons,
 }) {
   const listRef = useRef(null);
   const containerRef = useRef(null);
@@ -298,6 +301,7 @@ const BookmarkList = React.memo(function BookmarkList({
       onCycleTag,
       onClearFilters,
       filterSummary,
+      remoteFavicons,
       onFilterHeightChange: handleFilterHeightChange,
       onRowHeightChange: handleRowHeightChange,
     }),
@@ -315,6 +319,7 @@ const BookmarkList = React.memo(function BookmarkList({
       onCycleTag,
       onClearFilters,
       filterSummary,
+      remoteFavicons,
       handleFilterHeightChange,
       handleRowHeightChange,
     ]

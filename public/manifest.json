@@ -14,7 +14,7 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["storage", "bookmarks"],
+  "permissions": ["storage", "bookmarks", "favicon"],
   "host_permissions": ["<all_urls>"],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
