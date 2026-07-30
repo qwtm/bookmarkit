@@ -5,7 +5,10 @@ import { Button, Modal } from "./DesignSystem.jsx";
 // focus restoration come from Modal (#27); onScrimClick guards both routes out
 // so a deletion in flight cannot be abandoned half way.
 // UX-09: isLoading prop disables buttons and shows spinner during async deletion.
-const DeleteConfirmModal = ({ message, onConfirm, onCancel, isLoading = false }) => {
+// #86: `reasons` explains a proposal the user did not make by hand — a model's
+// verdict that two bookmarks are the same page. Nothing is deleted without the
+// pair, and the reason for it, being visible first.
+const DeleteConfirmModal = ({ message, reasons = [], onConfirm, onCancel, isLoading = false }) => {
   return (
     <Modal
       role="alertdialog"
@@ -29,6 +32,19 @@ const DeleteConfirmModal = ({ message, onConfirm, onCancel, isLoading = false })
       <p id="delete-confirm-msg" className="text-secondary-text text-center">
         {message}
       </p>
+
+      {reasons.length > 0 && (
+        <ul className="mt-3 max-h-60 overflow-y-auto text-sm space-y-2">
+          {reasons.map(({ id, title, keptTitle, reason }) => (
+            <li key={id} className="p-2 rounded border border-border">
+              <span className="text-primary-text">{title}</span>
+              <span className="text-secondary-text"> — same page as </span>
+              <span className="text-primary-text">{keptTitle}</span>
+              <div className="text-xs text-secondary-text">{reason}</div>
+            </li>
+          ))}
+        </ul>
+      )}
     </Modal>
   );
 };

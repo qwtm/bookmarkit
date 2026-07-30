@@ -15,7 +15,9 @@ export const getDuplicateKey = (bookmark) => {
 
 // #45: How much a copy is worth keeping. Deleting the annotated copy and keeping
 // the bare one loses work that cannot be recovered from the other bookmark.
-const metadataWeight = (bookmark) =>
+// Exported for #86, which decides the same question about a pair a model called
+// the same page: one rule for which copy survives, not two.
+export const metadataWeight = (bookmark) =>
   (bookmark?.tags?.length ? 1 : 0) +
   (bookmark?.rating ? 1 : 0) +
   (bookmark?.description?.trim() ? 1 : 0);

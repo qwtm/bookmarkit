@@ -113,9 +113,20 @@ const QuickAdd = () => {
     [bookmarks]
   );
 
-  // Read the active tab. url/title/favIconUrl are readable under the existing
-  // <all_urls> host permission — no "tabs" permission needed.
+  // #52: A right-click already knows what to bookmark, and for a link it knows
+  // something this popup could not discover — the link's target is not the active
+  // tab — so the target arrives in the query string. Otherwise the active tab is
+  // the subject. url/title/favIconUrl are readable under the existing <all_urls>
+  // host permission; no "tabs" permission needed.
   useEffect(() => {
+    const requested = new URLSearchParams(window.location.search);
+    const requestedUrl = requested.get("url");
+    if (requestedUrl) {
+      if (isSafeHttpUrl(requestedUrl))
+        setTab({ url: requestedUrl, title: requested.get("title") || "" });
+      else setTabError("That link can't be bookmarked (only http and https pages).");
+      return;
+    }
     (async () => {
       try {
         const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
