@@ -389,7 +389,13 @@ const OptionsModal = ({
               <input
                 type="file"
                 accept=".json,.yaml,.yml"
-                onChange={(e) => onThemeUpload?.(e.target.files[0])}
+                onChange={(e) => {
+                  // #25: Clear the input so re-picking the same file after a
+                  // rejected theme fires another change event.
+                  const [file] = e.target.files;
+                  e.target.value = "";
+                  if (file) onThemeUpload?.(file);
+                }}
                 className="block w-full text-sm text-secondary-text file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-secondary-bg file:text-accent hover:file:bg-primary-bg focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
               />
               <p className="text-xs text-secondary-text mt-1">Upload a JSON or YAML theme file.</p>
