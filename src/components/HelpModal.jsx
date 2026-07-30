@@ -1,24 +1,11 @@
-import React, { useEffect, useRef } from "react";
-import { useFocusTrap } from "../hooks/useFocusTrap.js";
+import React from "react";
 import { Button, Kbd, Modal } from "./DesignSystem.jsx";
 
-// A11Y-02, PERF-05: Accessible help modal with focus trap, focus restoration,
-// Escape key handler, and React.memo to skip unnecessary re-renders.
+// PERF-05: React.memo to skip unnecessary re-renders. Focus trap, Escape, and
+// focus restoration come from Modal (#27).
 const HelpModal = ({ onClose }) => {
-  const containerRef = useRef(null);
-  useFocusTrap(containerRef);
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
   return (
     <Modal
-      ref={containerRef}
       title="Help & Features"
       titleId="help-modal-title"
       closeLabel="Close help"

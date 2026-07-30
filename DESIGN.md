@@ -44,6 +44,16 @@ Manual sorting runs last and intentionally overrides an agent sort. Clearing
 manual filters does not clear the agent plan, and clearing agent search does
 not clear manual filters.
 
+Keyboard behavior has one owner at a time. The `Modal` wrapper in
+`DesignSystem.jsx` gives every dialog the same contract — focus moves in on
+open, Tab is trapped, Escape closes through the same guard as a scrim click, and
+focus returns to whatever opened it — so no dialog implements this for itself.
+Escape is handled on the dialog's own panel and stops there, which is what keeps
+the app's shortcuts from firing behind an open dialog and stops a nested dialog
+from closing its parent. App-level shortcuts are declared through
+`useKeyboardShortcuts`, which skips typing contexts and is suspended entirely
+while any dialog is open.
+
 ## Persistence boundary
 
 `src/stores/index.js` selects one of three implementations behind the shared
