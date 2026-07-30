@@ -63,6 +63,9 @@ jobs:
           # to confuse with the bot's *user* id, which is a third number entirely.
           client-id: ${{ secrets.CHORES_DUMB_CLIENT_ID }}
           private-key: ${{ secrets.CHORES_DUMB_PRIVATE_KEY }}
+          # Narrow the installation token — zizmor github-app audit.
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,14 +114,17 @@ jobs:
         with:
           client-id: ${{ secrets.CHORES_DUMB_CLIENT_ID }}
           private-key: ${{ secrets.CHORES_DUMB_PRIVATE_KEY }}
+          permission-contents: write
+          # Stranded-tag recovery: gh workflow run release.yml
+          permission-actions: write
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          # The tag push has to start release.yml by itself, so it must carry the
-          # App/PAT credentials rather than GITHUB_TOKEN's.
-          token: ${{ steps.chores.outputs.token || secrets.RELEASE_TOKEN || github.token }}
+          # Do not persist the App/PAT into .git — push via `gh auth setup-git`
+          # with GH_TOKEN in the tag step instead (zizmor artipacked).
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -168,6 +174,9 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git tag -a "$version" -m "bookmarkit $version"
+          # Checkout kept persist-credentials: false; wire the authorized token
+          # only for this push so release.yml's on:push:tags fires as chores-dumb.
+          gh auth setup-git
           git push origin "$version"
           echo "Tagged $version."
           # No dispatch: pushed under the App/PAT, this tag fires release.yml's
