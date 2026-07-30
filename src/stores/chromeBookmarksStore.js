@@ -153,6 +153,24 @@ export function createChromeBookmarksStore() {
     return bookmarks.map(({ node, folderPath }) => toBookmark(node, folderPath));
   };
 
+  /**
+   * #43: Every folder under the root that holds at least one bookmark, mapped to
+   * its children in their current order. The subfolders are included because a
+   * bookmark's index is a position among all of its siblings, not among the
+   * bookmarks alone.
+   * @returns {Promise<Map<string, chrome.bookmarks.BookmarkTreeNode[]>>}
+   */
+  const foldersHoldingBookmarks = async () => {
+    const byFolder = new Map();
+    const traverse = async (parentId) => {
+      const children = await chrome.bookmarks.getChildren(parentId);
+      if (children.some((n) => n.url)) byFolder.set(parentId, children);
+      await Promise.all(children.filter((n) => !n.url).map((n) => traverse(n.id)));
+    };
+    await traverse(await ensureRootFolder());
+    return byFolder;
+  };
+
   // #42: the folder path a bookmark asks for, in the same shape `create` uses.
   const folderPathOf = (bookmark) =>
     typeof bookmark.folderId === "string" ? bookmark.folderId.trim() : "";
@@ -260,26 +278,33 @@ export function createChromeBookmarksStore() {
      */
     async reorderBookmarks(orderedIds = []) {
       await mutate(async () => {
-        const rootId = await ensureRootFolder();
-        const children = await chrome.bookmarks.getChildren(rootId);
-        // Only bookmark nodes (exclude folders)
-        const bookmarkChildren = children.filter((n) => n.url);
-        const existingIds = bookmarkChildren.map((n) => n.id);
-        const set = new Set(orderedIds);
-        const normalized = [
-          // Keep only ids that exist under root
-          ...orderedIds.filter((id) => set.has(id) && existingIds.includes(id)),
-          // Append the rest (not specified), preserving current order
-          ...existingIds.filter((id) => !set.has(id)),
-        ];
-        // Sequentially move each node to its index
-        for (let i = 0; i < normalized.length; i++) {
-          const id = normalized[i];
-          try {
-            await chrome.bookmarks.move(id, { parentId: rootId, index: i });
-          } catch (e) {
-            // Ignore move errors for individual items to keep best-effort ordering
-            console.warn("Failed to move bookmark", id, e);
+        // #43: A bookmark's position is only meaningful among its own siblings,
+        // so the requested order is applied folder by folder. Reading only the
+        // root's children used to drop every id nested in a subfolder, which
+        // silently left most of a foldered collection unsorted.
+        const rank = new Map();
+        orderedIds.forEach((id, index) => {
+          if (!rank.has(id)) rank.set(id, index);
+        });
+
+        for (const [folderId, children] of await foldersHoldingBookmarks()) {
+          const ids = children.filter((n) => n.url).map((n) => n.id);
+          const ranked = ids.filter((id) => rank.has(id)).sort((a, b) => rank.get(a) - rank.get(b));
+          // Ids the caller did not mention keep their relative order, after the
+          // ones it did.
+          const ordered = [...ranked, ...ids.filter((id) => !rank.has(id))];
+          // Only the bookmark slots are rewritten, so subfolders stay where the
+          // user put them.
+          let next = 0;
+          const target = children.map((n) => (n.url ? ordered[next++] : n.id));
+          // Ascending, so each move lands on an index that is already final.
+          for (let i = 0; i < target.length; i++) {
+            try {
+              await chrome.bookmarks.move(target[i], { parentId: folderId, index: i });
+            } catch (e) {
+              // Ignore move errors for individual items to keep best-effort ordering
+              console.warn("Failed to move bookmark", target[i], e);
+            }
           }
         }
       });
