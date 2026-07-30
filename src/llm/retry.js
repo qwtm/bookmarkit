@@ -74,9 +74,12 @@ export async function fetchWithRetry(url, options = {}, retryConfig = {}, caller
 
     // Retriable status codes
     if (retryOn.includes(res.status) && attempt < maxAttempts) {
-      const retryAfterSec = parseFloat(res.headers?.get?.("Retry-After") || "0");
-      const waitMs =
-        retryAfterSec > 0 ? retryAfterSec * 1000 : _jitteredBackoff(baseDelayMs, attempt);
+      const retryAfter = retryAfterMs(res.headers?.get?.("Retry-After"));
+      // Asked to wait longer than we are willing to hold the request. Returning
+      // now surfaces the rate limit to the user instead of either stalling on it
+      // or ignoring it and retrying early.
+      if (retryAfter === Infinity) return res;
+      const waitMs = retryAfter || _jitteredBackoff(baseDelayMs, attempt);
       lastError = new Error(`HTTP ${res.status}`);
       await _delay(waitMs);
       continue;
@@ -87,6 +90,26 @@ export async function fetchWithRetry(url, options = {}, retryConfig = {}, caller
   }
 
   throw lastError || new Error("fetchWithRetry: all attempts exhausted");
+}
+
+// #28: The longest a Retry-After will be honored. A provider asking for an hour
+// must not become an hour-long spinner.
+export const MAX_RETRY_AFTER_MS = 60_000;
+
+/**
+ * #28: How long a Retry-After header asks us to wait. The header is either
+ * delta-seconds or an HTTP-date, and both are handled.
+ * @param {string | null | undefined} header
+ * @returns {number} 0 when absent, unusable, or already past; Infinity when the
+ *   requested wait is longer than MAX_RETRY_AFTER_MS.
+ */
+export function retryAfterMs(header) {
+  const raw = (header || "").trim();
+  if (!raw) return 0;
+  const seconds = Number(raw);
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(raw) - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return ms > MAX_RETRY_AFTER_MS ? Infinity : ms;
 }
 
 function _jitteredBackoff(baseMs, attempt) {
