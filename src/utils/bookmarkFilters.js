@@ -2,6 +2,10 @@
 // No React or DOM dependencies — independently testable.
 // PERF-08: Defined outside the component so references are stable across renders.
 
+import { findBrokenLinks } from "./linkHealth.js";
+import { findNeverOpened } from "./openHistory.js";
+import { mergeSemanticMatches } from "./semanticSearch.js";
+
 export const searchBookmarks = (searchTerm, list) => {
   const lower = (searchTerm || "").toLowerCase();
   if (!lower) return list;
@@ -108,6 +112,15 @@ export const sortStepsByPriority = (steps = []) => {
     .map((x) => x.s);
 };
 
+/**
+ * The slot a step occupies in an accumulated plan.
+ *
+ * #46's `semanticMatches` is a `searchBookmarks` the app widened, so it has to
+ * compete for the same slot: otherwise searching "pinecone" and then "sourdough"
+ * leaves both in the plan and the view narrows to nothing.
+ */
+const slotOf = (action) => (action === "semanticMatches" ? "searchBookmarks" : action);
+
 // #20: Merge a newly parsed plan into the accumulated one. New steps replace any
 // prior step with the same action (so re-searching a different term does not
 // stack on top of the old filter), while steps of a different action still
@@ -121,14 +134,15 @@ export const mergeAgentPlan = (previous = [], steps = []) => {
   // genuinely new actions are appended. Each action ends up exactly once —
   // extra duplicate slots in `previous` and repeated incoming actions are
   // collapsed, keeping the one-step-per-action bound (Codex #32).
-  const replacement = new Map(steps.map((s) => [s.action, s])); // last wins per action
+  const replacement = new Map(steps.map((s) => [slotOf(s.action), s])); // last wins per slot
   const placed = new Set();
   const merged = [];
   for (const s of prev) {
-    if (replacement.has(s.action)) {
-      if (!placed.has(s.action)) {
-        placed.add(s.action);
-        merged.push(replacement.get(s.action)); // first matching slot only
+    const slot = slotOf(s.action);
+    if (replacement.has(slot)) {
+      if (!placed.has(slot)) {
+        placed.add(slot);
+        merged.push(replacement.get(slot)); // first matching slot only
       }
       // drop additional stale duplicate slots for this action
     } else {
@@ -136,13 +150,38 @@ export const mergeAgentPlan = (previous = [], steps = []) => {
     }
   }
   for (const s of steps) {
-    if (!placed.has(s.action)) {
-      placed.add(s.action);
-      merged.push(replacement.get(s.action));
+    const slot = slotOf(s.action);
+    if (!placed.has(slot)) {
+      placed.add(slot);
+      merged.push(replacement.get(slot));
     }
   }
   return merged;
 };
+
+/**
+ * The actions that shape what the list shows. Everything else a plan can contain
+ * — importing, exporting, de-duplicating, persisting an order — is a side effect
+ * the app carries out once, and contributes nothing to the projection.
+ *
+ * Named because two callers need the same answer: this function skips the rest,
+ * and a saved view (#49) keeps only these, since a view is a lens over the list
+ * rather than a script to re-run.
+ */
+export const DISPLAY_ACTIONS = new Set([
+  "searchBookmarks",
+  "semanticMatches",
+  "findIncludes",
+  "findStartsWith",
+  "findWithTags",
+  "filterByRating",
+  "findBrokenLinks",
+  "findNeverOpened",
+  "sortBookmarks",
+  "limitResults",
+  "limitFirst",
+  "limitLast",
+]);
 
 // PERF-08: applyAgentPlan is a pure function — given the same plan + list it always
 // returns the same reference-equal result when inputs are stable.
@@ -153,23 +192,23 @@ export const applyAgentPlan = (plan, list) => {
   let currentResults = [...list];
   for (const step of ordered) {
     const { action, parameters = {} } = step;
-    if (
-      [
-        "importBookmarks",
-        "exportBookmarks",
-        "resetSearch",
-        "showAllBookmarks",
-        "removeDuplicates",
-        "reorder",
-        "reorderAscending",
-        "reorderDescending",
-        "persistSortedOrder",
-      ].includes(action)
-    )
-      continue;
+    if (!DISPLAY_ACTIONS.has(action)) continue;
     switch (action) {
       case "searchBookmarks":
         currentResults = searchBookmarks(parameters.searchTerm || "", currentResults);
+        break;
+      // #46: a search the app widened with vector matches. It carries its own
+      // search term rather than layering onto a `searchBookmarks` step, because
+      // the widening has to see what substring matching filtered out.
+      //
+      // The parser's whitelist does not include it: this step is written by the
+      // app from a local ranking, never by a model.
+      case "semanticMatches":
+        currentResults = mergeSemanticMatches(
+          searchBookmarks(parameters.searchTerm || "", currentResults),
+          currentResults,
+          Array.isArray(parameters.ids) ? parameters.ids : []
+        );
         break;
       case "findIncludes":
         currentResults = findIncludes(
@@ -191,6 +230,14 @@ export const applyAgentPlan = (plan, list) => {
           parameters.excludeTags || [],
           currentResults
         );
+        break;
+      case "findBrokenLinks":
+        currentResults = findBrokenLinks(currentResults);
+        break;
+      // #50: the bookmarks nothing has opened. Like broken links, this reads a
+      // field the app wrote itself, so it needs no model and no network.
+      case "findNeverOpened":
+        currentResults = findNeverOpened(currentResults);
         break;
       case "filterByRating":
         currentResults = filterByRating(parameters || {}, currentResults);

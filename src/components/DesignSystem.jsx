@@ -1,6 +1,7 @@
 /* eslint-disable max-lines */
 import React from "react";
 import { FAVICON_PLACEHOLDER, faviconSrc } from "../utils/favicon.js";
+import { useFocusTrap } from "../hooks/useFocusTrap.js";
 
 // Internal Bookmarkit Design System library. Components are lifted from the
 // supplied design-system source and keep native React event/ref contracts so
@@ -350,6 +351,18 @@ export function BookmarkCardView({
   );
 }
 
+/**
+ * #27, #23: A dialog is a dialog. Escape, the focus trap, and focus restoration
+ * belong to the wrapper rather than to each caller — they were copied into three
+ * modals and simply missing from the rest, which is how the form, the options
+ * dialog and import/export ended up with no keyboard way out.
+ *
+ * Escape is handled on the panel, not on the document, so the dialog holding
+ * focus is the one that closes; a nested dialog does not take its parent with
+ * it. Stopping propagation is what keeps the app's own Escape shortcut from also
+ * firing behind an open dialog. `onScrimClick` guards both routes out when a
+ * caller needs to refuse (mid-delete, unsaved edits), so it also guards Escape.
+ */
 export const Modal = React.forwardRef(function Modal(
   {
     title,
@@ -372,16 +385,25 @@ export const Modal = React.forwardRef(function Modal(
 ) {
   const generatedTitleId = React.useId();
   const resolvedTitleId = titleId || (title ? generatedTitleId : undefined);
+  const panelRef = React.useRef(null);
+  React.useImperativeHandle(ref, () => panelRef.current, []);
+  useFocusTrap(panelRef);
+  const requestClose = onScrimClick || onClose;
 
   return (
     <div
       className={`ds-modal-scrim ${className}`}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) (onScrimClick || onClose)?.();
+        if (event.target === event.currentTarget) requestClose?.();
       }}
     >
       <div
-        ref={ref}
+        ref={panelRef}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          event.stopPropagation();
+          requestClose?.();
+        }}
         role={role}
         aria-modal="true"
         aria-labelledby={resolvedTitleId}

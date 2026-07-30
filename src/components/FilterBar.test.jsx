@@ -81,6 +81,27 @@ describe("FilterBar (#53)", () => {
     expect(onChange).toHaveBeenCalledWith({ ...EMPTY_FILTERS, sortBy: "title" });
   });
 
+  // #47: the sweep writes urlStatus; this is how the result is looked at without
+  // asking an LLM anything.
+  it("toggles the broken-only filter and reports its state", () => {
+    const { onChange } = setup();
+    const toggle = screen.getByRole("button", { name: "Broken only" });
+
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+
+    expect(onChange).toHaveBeenCalledWith({ ...EMPTY_FILTERS, brokenOnly: true });
+  });
+
+  it("shows the broken-only filter as pressed while it is on", () => {
+    setup({ filters: { ...EMPTY_FILTERS, brokenOnly: true } });
+
+    expect(screen.getByRole("button", { name: "Broken only" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  });
+
   it("disables the direction toggle until a sort field is chosen", () => {
     setup();
     expect(screen.getByRole("button", { name: /Sort direction/ })).toBeDisabled();
