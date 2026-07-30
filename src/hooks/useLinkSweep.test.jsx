@@ -152,6 +152,24 @@ describe("useLinkSweep (#47)", () => {
     expect(globalThis.chrome.runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  // Recording the whole batch would hide the links it never reached for a week,
+  // and the next run would claim everything was checked recently.
+  it("records only the links it really checked when stopped mid-batch", async () => {
+    answerWith(() => "valid");
+    render(<Probe bookmarks={[bookmark("first"), bookmark("second")]} />);
+    globalThis.chrome.runtime.sendMessage.mockImplementation((message, respond) => {
+      sweep.stop();
+      respond({ status: "valid", redirectUrl: null });
+    });
+
+    await act(async () => {
+      await sweep.start();
+    });
+
+    const recorded = JSON.parse(localStorage.getItem(CHECKED_AT_KEY));
+    expect(Object.keys(recorded)).toEqual(["first"]);
+  });
+
   it("only one sweep runs at a time", async () => {
     answerWith(() => "valid");
     render(<Probe bookmarks={[bookmark("a"), bookmark("b")]} />);

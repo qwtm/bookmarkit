@@ -348,6 +348,8 @@ the agent for your broken links) shows the results.
   URL is sent only to the site itself.
 - Only public http(s) hosts are checked. Private, loopback, link-local, and cloud-metadata
   addresses are refused, and redirects are not followed (both are SSRF guards).
+- The web build has no service worker, so the check is an ordinary fetch — but the
+  same two rules hold: public hosts only, and redirects are not followed.
 - If a site is blocked or unreachable, status may show “invalid”.
 - You can toggle “Ignore checking” per bookmark.
 

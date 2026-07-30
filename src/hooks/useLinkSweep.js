@@ -51,23 +51,29 @@ const shouldWait = () =>
   (typeof document !== "undefined" && document.hidden);
 
 /**
- * One batch of checks: the statuses that changed, and how many links could not
- * be reached at all. The two differ — a link already known to be broken changes
- * nothing but still failed, which is what the backoff needs to know.
+ * One batch of checks: which links were really checked, the statuses that
+ * changed, and how many could not be reached at all.
+ *
+ * All three differ. A link already known to be broken changes nothing but still
+ * failed, which is what the backoff reads. And a stop mid-batch leaves the rest
+ * unchecked, which is what the record of past checks must not claim otherwise —
+ * writing the whole batch down would hide those links for a week.
  */
 async function checkBatch(batch, { gapMs, keepGoing, onChecked }) {
+  const checked = [];
   const patches = [];
   let failed = 0;
   for (const bookmark of batch) {
     if (!keepGoing()) break;
     const result = await fetchUrlStatus(bookmark.url).catch(() => ({ status: "invalid" }));
+    checked.push(bookmark.id);
     if (result?.status !== "valid") failed += 1;
     const patch = sweepPatch(bookmark, result);
     if (patch) patches.push(patch);
     onChecked();
     if (gapMs) await sleep(gapMs);
   }
-  return { patches, failed };
+  return { checked, patches, failed };
 }
 
 /** Statuses to the store, in one round-trip where the store offers one. */
@@ -151,7 +157,7 @@ export function useLinkSweep({ bookmarks, storeRef, showMessage, pacing }) {
         });
         if (batch.length === 0) break;
 
-        const { patches, failed } = await checkBatch(batch, {
+        const { checked, patches, failed } = await checkBatch(batch, {
           gapMs,
           keepGoing,
           onChecked: () => setProgress((prev) => ({ ...prev, checked: prev.checked + 1 })),
@@ -159,17 +165,13 @@ export function useLinkSweep({ bookmarks, storeRef, showMessage, pacing }) {
         await writePatches(storeRef.current, patches);
 
         const liveIds = new Set(latest.current.bookmarks.map((b) => b.id));
-        checkedAtRef.current = recordChecked(
-          checkedAtRef.current,
-          batch.map((b) => b.id),
-          Date.now(),
-          liveIds
-        );
+        checkedAtRef.current = recordChecked(checkedAtRef.current, checked, Date.now(), liveIds);
         await writeSetting(CHECKED_AT_KEY, JSON.stringify(checkedAtRef.current));
 
         // A batch where every single link failed usually means the network, not
         // the web: back off rather than condemning the collection at full speed.
-        pause = failed === batch.length ? Math.min(pause * 2, maxPauseMs) : batchPauseMs;
+        pause =
+          failed > 0 && failed === checked.length ? Math.min(pause * 2, maxPauseMs) : batchPauseMs;
         if (keepGoing() && pause) await sleep(pause);
       }
     } catch (error) {

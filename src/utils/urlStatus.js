@@ -8,6 +8,16 @@
 //
 // #47: extracted from BookmarkApp so the sweep and the select-time check ask the
 // same question the same way, instead of two implementations drifting apart.
+//
+// The boundary is the same on both paths, not just the worker's: only public
+// http(s) hosts are asked about, and a redirect is never followed. In the web
+// build the fetch is not privileged, but the request still leaves the browser,
+// so a public URL answering 30x with a private Location would otherwise reach an
+// internal host before anything could look at it.
+
+import { isPublicHttpUrl } from "./url.js";
+
+const UNREACHABLE = { status: "invalid", redirectUrl: null };
 
 /**
  * @param {string} url
@@ -15,19 +25,22 @@
  */
 export function fetchUrlStatus(url) {
   if (!url) return Promise.resolve({ status: "idle", redirectUrl: null });
+  if (!isPublicHttpUrl(url)) return Promise.resolve({ ...UNREACHABLE });
 
   if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({ type: "CHECK_URL", url }, (result) => {
-        resolve(result ?? { status: "invalid", redirectUrl: null });
+        resolve(result ?? { ...UNREACHABLE });
       });
     });
   }
 
-  return fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) })
-    .then((res) => ({
-      status: res.ok ? "valid" : "invalid",
-      redirectUrl: res.url && res.url !== url ? res.url : null,
-    }))
-    .catch(() => ({ status: "invalid", redirectUrl: null }));
+  return fetch(url, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(5000) })
+    .then((res) => {
+      // A redirect is "reachable, but we do not chase or expose the target" —
+      // the same answer the worker gives, for the same reason.
+      if (res.type === "opaqueredirect") return { status: "valid", redirectUrl: null };
+      return { status: res.ok ? "valid" : "invalid", redirectUrl: null };
+    })
+    .catch(() => ({ ...UNREACHABLE }));
 }

@@ -192,7 +192,10 @@ never be committed.
 - URL reachability checks execute in `public/background.js`, not page context.
   They accept only public HTTP(S) destinations and do not follow redirects, so
   the extension's broad host permission does not become an internal-network
-  request primitive.
+  request primitive. `utils/urlStatus.js` applies both rules on the calling side
+  too, which is what keeps the web build's unprivileged fetch inside the same
+  boundary: the response may be unreadable there, but the request still leaves the
+  browser.
 - The release archive includes `LICENSE` and generated
   `THIRD-PARTY-NOTICES.md`. The latter is derived from the locked production
   dependency closure and checked for drift in CI.
