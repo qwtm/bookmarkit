@@ -24,7 +24,8 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
 - Bookmark management
   - Add, edit, delete, tag, folder, rating, favicon support
   - Multi‑select (Cmd/Ctrl+Click), open in new tab (Shift+Click)
-  - Detect and remove duplicates (by title + URL)
+  - Detect and remove duplicates by the page they point at, with an optional
+    second opinion from your LLM on the same article saved under two URLs
 - URL status
   - Lightweight validity check via HEAD request from the extension service worker
   - One‑click “Ignore checking” toggle per bookmark
@@ -248,6 +249,14 @@ they are titled: `http` and `https`, `www.` and bare, a trailing slash, and
 tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, and similar) are all
 ignored. Path, remaining query, and fragment still distinguish pages. When
 copies differ, the one carrying tags, a rating, or a description is the one kept.
+
+If an LLM provider is configured, “Remove Duplicates” then takes a second look at
+the pairs no rule can settle — the same article under a canonical and a
+syndicated URL, or a paginated page and its print view. Those proposals appear in
+the same confirmation dialog with the reason for each pair spelled out, so nothing
+is deleted before you have read why it was suggested. With no provider configured,
+or an encrypted key you have not unlocked this session, the rule-based pass is all
+that runs, exactly as before.
 
 ## Keyboard shortcuts
 

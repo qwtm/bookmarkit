@@ -68,6 +68,31 @@ walks. `chromeBookmarksStore` ignores the events its own writes echo back and
 coalesces bursts it did not cause. Anything added to a store must keep that
 property: one write, one notification, whatever its size.
 
+## Duplicates
+
+Duplicate detection has two layers, and the order matters. `utils/duplicates.js`
+is the rule: two bookmarks are the same when `normalizeUrl` collapses them to the
+same key, and the copy carrying tags, a rating, or a description is the one kept.
+It needs no provider and is what runs by default.
+
+`utils/nearDuplicates.js` is the second layer, for what a rule cannot settle: the
+same article under a canonical and a syndicated URL. It is pure — choosing which
+pairs are worth asking about, reading a verdict back, and turning verdicts into a
+proposal — while `useSemanticDedupe` does the asking. Three properties hold it
+inside the trust boundary:
+
+- A verdict naming a pair nobody asked about is dropped, so an answer cannot
+  smuggle a bookmark into a deletion.
+- A bookmark already proposed is left out of later pairs, so three copies pairing
+  up three ways cannot delete all three.
+- The result is a proposal. It reaches the store only through the confirmation
+  dialog the delete button already uses, and each proposed pair shows the reason
+  it was proposed. Which copy survives is decided by the same rule the
+  deterministic layer uses, not by the model.
+
+With no provider configured, a locked key, or a failed request, the proposal is
+empty and the rule-based result stands on its own.
+
 ## LLM boundary
 
 Provider adapters in `src/llm/providers/` expose `generate(prompt)` through the

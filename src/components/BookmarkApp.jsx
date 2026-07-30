@@ -12,6 +12,7 @@ import {
   hasActiveFilters,
 } from "../utils/manualFilters.js";
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
+import { useSemanticDedupe } from "../hooks/useSemanticDedupe.js";
 import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { remoteFaviconsEnabled, setRemoteFaviconsEnabled } from "../utils/favicon.js";
@@ -288,6 +289,9 @@ const BookmarkApp = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
   const [isDeleteConfirmModalOpen, setIsDeleteConfirmModalOpen] = useState(false);
+  // #86: why a pair was proposed, shown in the confirmation. Empty for the
+  // deterministic pass, which needs no explaining.
+  const [duplicateReasons, setDuplicateReasons] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false); // UX-09
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
@@ -461,6 +465,7 @@ const BookmarkApp = () => {
 
   const handleCancelDelete = useCallback(() => {
     setBookmarksToDelete([]);
+    setDuplicateReasons([]);
     setIsDeleteConfirmModalOpen(false);
   }, []);
 
@@ -543,15 +548,33 @@ const BookmarkApp = () => {
     [handleBookmarkClick]
   );
 
-  const handleRemoveDuplicates = useCallback(() => {
-    const ids = findDuplicateIds(displayedBookmarks);
+  // #86: the optional second opinion on duplicates. With no provider configured,
+  // or an encrypted key nobody unlocked, it proposes nothing and the rule-based
+  // pass stands on its own.
+  const { isAsking: isAskingAboutDuplicates, propose: proposeSemanticDuplicates } =
+    useSemanticDedupe({
+      provider: runtimeProvider,
+      providerOptions: runtimeProviderOptions[runtimeProvider] || {},
+      locked: optionsLocked,
+    });
+
+  // #86: the rule-based pass first, then — only if a provider is configured — a
+  // second look at the pairs no rule can settle. Both end in the same
+  // confirmation, and the model's reason for each pair is shown there.
+  const handleRemoveDuplicates = useCallback(async () => {
+    const certain = findDuplicateIds(displayedBookmarks);
+    const remaining = displayedBookmarks.filter((b) => !certain.includes(b.id));
+    const { ids: likely, reasons } = await proposeSemanticDuplicates(remaining);
+    const ids = [...certain, ...likely];
+
     if (ids.length === 0) {
       showCustomMessage("No duplicate bookmarks found in the current view.", "info");
       return;
     }
+    setDuplicateReasons(reasons);
     setBookmarksToDelete(ids);
     setIsDeleteConfirmModalOpen(true);
-  }, [displayedBookmarks]);
+  }, [displayedBookmarks, proposeSemanticDuplicates]);
 
   const resetSearch = useCallback(() => {
     setLastAction(null);
@@ -815,8 +838,14 @@ const BookmarkApp = () => {
         if (step.action === "importBookmarks" || step.action === "exportBookmarks")
           setIsImportExportModalOpen(true);
         if (step.action === "removeDuplicates") {
-          const ids = findDuplicateIds(applyAgentPlan(combined, bookmarks));
+          const inView = applyAgentPlan(combined, bookmarks);
+          const certain = findDuplicateIds(inView);
+          const { ids: likely, reasons } = await proposeSemanticDuplicates(
+            inView.filter((b) => !certain.includes(b.id))
+          );
+          const ids = [...certain, ...likely];
           if (ids.length > 0) {
+            setDuplicateReasons(reasons);
             setBookmarksToDelete(ids);
             setIsDeleteConfirmModalOpen(true);
           } else showCustomMessage("No duplicate bookmarks found in the current view.", "info");
@@ -1023,8 +1052,13 @@ const BookmarkApp = () => {
               <Button size="sm" intent="secondary" onClick={handleImportExportOpen}>
                 Import/Export
               </Button>
-              <Button size="sm" intent="secondary" onClick={handleRemoveDuplicates}>
-                Remove Duplicates
+              <Button
+                size="sm"
+                intent="secondary"
+                onClick={handleRemoveDuplicates}
+                loading={isAskingAboutDuplicates}
+              >
+                {isAskingAboutDuplicates ? "Comparing…" : "Remove Duplicates"}
               </Button>
               {lastAction && (
                 <Button size="sm" intent="ghost" onClick={resetSearch}>
@@ -1164,6 +1198,7 @@ const BookmarkApp = () => {
         {isDeleteConfirmModalOpen && (
           <DeleteConfirmModal
             message={`Are you sure you want to delete ${bookmarksToDelete.length} bookmark(s)?`}
+            reasons={duplicateReasons}
             onConfirm={handleConfirmDelete}
             onCancel={handleCancelDelete}
             isLoading={isDeleting}
