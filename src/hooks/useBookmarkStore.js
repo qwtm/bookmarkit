@@ -34,6 +34,7 @@ const recorderFor =
     recordUndo({
       label: inverse.label,
       destructive: inverse.destructive,
+      endsHistory: inverse.endsHistory,
       undo: async () => {
         undoing.current = true;
         try {

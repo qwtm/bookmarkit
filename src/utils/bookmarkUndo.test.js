@@ -32,6 +32,39 @@ describe("inverseOf (#56)", () => {
     expect(w.saveBookmark).toHaveBeenCalledWith(previous);
   });
 
+  // A patch is merged, so a field the bookmark did not have has to come back as
+  // empty. Omitting it would leave whatever the edit added in place.
+  it("clears a field the edit had added", async () => {
+    const w = writes();
+
+    await inverseOf({
+      kind: "edit",
+      previous: { id: "1", title: "Old" },
+    }).apply(w);
+
+    expect(w.saveBookmark).toHaveBeenCalledWith({
+      id: "1",
+      title: "Old",
+      description: "",
+      tags: [],
+      rating: 0,
+      folderId: "",
+      faviconUrl: "",
+      urlStatus: "valid",
+    });
+  });
+
+  it("leaves a title or URL it never saw alone", async () => {
+    const w = writes();
+
+    await inverseOf({ kind: "edit", previous: { id: "1", tags: ["keep"] } }).apply(w);
+
+    const [patch] = w.saveBookmark.mock.calls[0];
+    expect(patch).not.toHaveProperty("title");
+    expect(patch).not.toHaveProperty("url");
+    expect(patch.tags).toEqual(["keep"]);
+  });
+
   it("does not carry timestamps back into an edit", async () => {
     const w = writes();
 
@@ -68,6 +101,20 @@ describe("inverseOf (#56)", () => {
     expect(inverse.label).toBe("Undo delete (2)");
     expect(inverse.destructive).toBe(true);
     expect(w.appendBookmarks).toHaveBeenCalledWith(removed);
+  });
+
+  // Restoring goes through the ordinary add paths, and stores mint their own ids
+  // there, so anything older in the history refers to bookmarks that are gone.
+  it("ends the history when a restore gives bookmarks new identities", () => {
+    expect(inverseOf({ kind: "delete", removed: [{ id: "1" }] }).endsHistory).toBe(true);
+    expect(inverseOf({ kind: "replaceAll", replaced: [] }).endsHistory).toBe(true);
+  });
+
+  it("leaves the history alone for a write that touches known bookmarks", () => {
+    expect(inverseOf({ kind: "edit", previous: { id: "1" } }).endsHistory).toBe(false);
+    expect(inverseOf({ kind: "create", created: { id: "1" } }).endsHistory).toBe(false);
+    expect(inverseOf({ kind: "append", added: [{ id: "1" }] }).endsHistory).toBe(false);
+    expect(inverseOf({ kind: "reorder", order: ["1"] }).endsHistory).toBe(false);
   });
 
   it("keeps the offer to undo a replacement until it is used", () => {

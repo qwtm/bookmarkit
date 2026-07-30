@@ -33,7 +33,8 @@ export function useUndoHistory(showMessage) {
   useEffect(() => () => clearTimeout(timerRef.current), []);
 
   /**
-   * @param {{label: string, destructive?: boolean, undo: () => Promise<void>}|null} entry
+   * @param {{label: string, destructive?: boolean, endsHistory?: boolean,
+   *   undo: () => Promise<void>}|null} entry
    *   null is accepted and ignored, so a caller can pass whatever an inverse came
    *   to without checking first.
    */
@@ -73,6 +74,10 @@ export function useUndoHistory(showMessage) {
     setOffered(null);
     try {
       await top.undo();
+      // A restore that mints new ids leaves every older entry pointing at ids
+      // that no longer exist. Undo stops here rather than failing, or worse,
+      // writing to a bookmark that has since been recreated under that id.
+      if (top.endsHistory) stackRef.current = [];
       return true;
     } catch (error) {
       console.error("Undo failed:", error);

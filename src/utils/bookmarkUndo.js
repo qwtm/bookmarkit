@@ -10,30 +10,38 @@
 // fallbacks, import progress and all — instead of a second, less careful copy.
 
 /**
- * The fields a bookmark's own edit can change, and therefore the ones an undo
- * has to put back. `createdAt` is not among them: it is not editable, and the
- * store maintains `updatedAt` itself.
+ * The optional fields an edit can change, each with what "absent" looks like once
+ * written. A patch is merged rather than replacing the document, so a field the
+ * bookmark did not have cannot simply be omitted from the undo: omitting it would
+ * leave the value the edit just added in place. It is sent back as empty instead.
  */
-const EDITABLE_FIELDS = [
-  "title",
-  "url",
-  "description",
-  "tags",
-  "rating",
-  "folderId",
-  "faviconUrl",
-  "urlStatus",
-];
+const OPTIONAL_FIELDS = {
+  description: "",
+  tags: [],
+  rating: 0,
+  folderId: "",
+  faviconUrl: "",
+  urlStatus: "valid",
+};
 
-// Fields the bookmark never had are left out rather than sent back as undefined:
-// Firestore rejects undefined, and a local store would happily write the hole.
-const editableFieldsOf = (bookmark) =>
-  Object.fromEntries(
-    EDITABLE_FIELDS.filter((field) => bookmark[field] !== undefined).map((field) => [
-      field,
-      bookmark[field],
-    ])
-  );
+/**
+ * Fields every bookmark has. Sending an empty title or URL would be worse than
+ * leaving one alone, so these are restored only when they were really there.
+ * `createdAt` is in neither list: it is not editable, and the store maintains
+ * `updatedAt` itself.
+ */
+const REQUIRED_FIELDS = ["title", "url"];
+
+const editableFieldsOf = (bookmark) => {
+  const fields = {};
+  for (const field of REQUIRED_FIELDS) {
+    if (bookmark[field] !== undefined) fields[field] = bookmark[field];
+  }
+  for (const [field, empty] of Object.entries(OPTIONAL_FIELDS)) {
+    fields[field] = bookmark[field] ?? empty;
+  }
+  return fields;
+};
 
 const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
@@ -45,6 +53,17 @@ const plural = (count, noun) => `${count} ${noun}${count === 1 ? "" : "s"}`;
  * does: the collection is intact either way, and a permanent toast is furniture.
  */
 const DESTRUCTIVE = new Set(["delete", "replaceAll"]);
+
+/**
+ * Writes whose undo brings bookmarks back with new identities.
+ *
+ * Restoring goes through the ordinary add paths, and every store mints its own
+ * ids there, so the restored bookmarks are not the ones that were removed as far
+ * as any id is concerned. Older entries in the history refer to the ids that are
+ * now gone, which is why undoing one of these ends the history rather than
+ * leaving inverses pointing at bookmarks that no longer exist.
+ */
+const REMINTS_IDS = new Set(["delete", "replaceAll"]);
 
 /** One builder per kind of write. Each yields nothing when there is nothing to undo. */
 const INVERSES = {
@@ -104,12 +123,17 @@ const INVERSES = {
  * @param {object[]} [operation.replaced] `replaceAll`: the whole previous collection.
  * @param {object[]} [operation.added] `append`: the bookmarks that were added.
  * @param {string[]} [operation.order] `reorder`: the previous order, by id.
- * @returns {{label: string, destructive: boolean, apply: (writes: object) => Promise<void>}|null}
+ * @returns {{label: string, destructive: boolean, endsHistory: boolean,
+ *   apply: (writes: object) => Promise<void>}|null}
  *   null when the write left nothing to undo — an empty import, or a create the
  *   store did not report an id for. A missing offer is better than one that fails.
  */
 export function inverseOf(operation) {
   const built = INVERSES[operation?.kind]?.(operation);
   if (!built) return null;
-  return { destructive: DESTRUCTIVE.has(operation.kind), ...built };
+  return {
+    destructive: DESTRUCTIVE.has(operation.kind),
+    endsHistory: REMINTS_IDS.has(operation.kind),
+    ...built,
+  };
 }

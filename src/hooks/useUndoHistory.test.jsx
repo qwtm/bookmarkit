@@ -155,6 +155,29 @@ describe("useUndoHistory (#56)", () => {
     expect(slow.undo).toHaveBeenCalledTimes(1);
   });
 
+  // Restoring deleted bookmarks gives them new ids, so an older entry would be
+  // pointing at ids that no longer exist.
+  it("stops walking back once a restore has renamed everything", async () => {
+    render(<Probe />);
+    const edit = entry("Undo edit");
+    const restore = entry("Undo delete (1)", { destructive: true, endsHistory: true });
+
+    act(() => history.record(edit));
+    act(() => history.record(restore));
+    await act(async () => {
+      await history.undoLast();
+    });
+
+    let again;
+    await act(async () => {
+      again = await history.undoLast();
+    });
+
+    expect(restore.undo).toHaveBeenCalled();
+    expect(edit.undo).not.toHaveBeenCalled();
+    expect(again).toBe(false);
+  });
+
   it("keeps a write that could not be undone, and says so", async () => {
     const showMessage = vi.fn();
     render(<Probe showMessage={showMessage} />);
