@@ -45,16 +45,6 @@ export function createChromeBookmarksStore() {
     return parentId;
   };
 
-  // ARCH-07: Wrap new URL() in try-catch — malformed URLs would otherwise throw and crash the list.
-  const getFaviconUrl = (url) => {
-    if (!url) return "";
-    try {
-      return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32`;
-    } catch {
-      return "";
-    }
-  };
-
   // Convert a chrome bookmark node to our Bookmark shape. folderPath is the path under ROOT ('' when at root)
   const toBookmark = (n, folderPath = "") => ({
     id: n.id,
@@ -64,7 +54,10 @@ export function createChromeBookmarksStore() {
     tags: [],
     rating: 0,
     folderId: folderPath || "",
-    faviconUrl: getFaviconUrl(n.url),
+    // #39: Left empty on purpose. A Chrome bookmark carries no icon, and minting
+    // a third-party favicon URL here would make every list render report the
+    // user's hostnames. src/utils/favicon.js owns that decision instead.
+    faviconUrl: "",
     createdAt: "",
     updatedAt: "",
     urlStatus: "valid",

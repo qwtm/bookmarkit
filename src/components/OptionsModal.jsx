@@ -23,6 +23,8 @@ const OptionsModal = ({
   themes,
   onThemeChange,
   onThemeUpload,
+  remoteFavicons = false,
+  onRemoteFaviconsChange,
   onClose,
 }) => {
   const [models, setModels] = useState([]);
@@ -392,6 +394,26 @@ const OptionsModal = ({
               />
               <p className="text-xs text-secondary-text mt-1">Upload a JSON or YAML theme file.</p>
             </div>
+          </div>
+          {/* #39: favicons are a privacy decision, so the choice is explicit and off by default. */}
+          <div className="border-t border-border pt-4">
+            <h3 className="text-lg font-semibold text-primary-text mb-2">Privacy</h3>
+            <label className="flex items-start gap-2 text-sm text-primary-text">
+              <input
+                type="checkbox"
+                checked={remoteFavicons}
+                onChange={(e) => onRemoteFaviconsChange?.(e.target.checked)}
+                className="mt-0.5 accent-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
+              />
+              <span>
+                Load site icons from Google
+                <span className="block text-xs text-secondary-text">
+                  Off by default. When on, every bookmark you can see sends its domain to google.com
+                  to fetch an icon. Bookmarkit shows a neutral placeholder otherwise, and uses your
+                  browser&rsquo;s own icon cache when the extension can.
+                </span>
+              </span>
+            </label>
           </div>
         </div>
         <div className="flex items-center justify-between gap-4 mt-6 pt-4 border-t border-border">

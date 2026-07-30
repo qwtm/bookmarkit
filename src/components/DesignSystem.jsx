@@ -1,5 +1,6 @@
 /* eslint-disable max-lines */
 import React from "react";
+import { FAVICON_PLACEHOLDER, faviconSrc } from "../utils/favicon.js";
 
 // Internal Bookmarkit Design System library. Components are lifted from the
 // supplied design-system source and keep native React event/ref contracts so
@@ -297,11 +298,14 @@ export function BookmarkCardView({
   selected = false,
   pendingDelete = false,
   unreachable = false,
+  remoteFavicons = false,
   className = "",
   ...props
 }) {
-  const fallback = "https://placehold.co/32x32/f0f0f0/999999?text=?";
-  const favSrc = faviconUrl || `https://www.google.com/s2/favicons?domain=${url}&sz=32`;
+  // #39: The bookmark's own icon first, then whatever faviconSrc is allowed to
+  // use. A broken icon falls back to the inline placeholder rather than to
+  // another remote request.
+  const favSrc = faviconUrl || faviconSrc(url, { allowRemote: remoteFavicons });
   return (
     <div
       className={`ds-bookmark-card ${selected ? "is-selected" : ""} ${pendingDelete ? "is-pending-delete" : ""} ${className}`}
@@ -323,7 +327,7 @@ export function BookmarkCardView({
           width={40}
           height={40}
           onError={(event) => {
-            event.currentTarget.src = fallback;
+            event.currentTarget.src = FAVICON_PLACEHOLDER;
           }}
         />
       </div>

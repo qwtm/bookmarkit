@@ -276,6 +276,10 @@ copies differ, the one carrying tags, a rating, or a description is the one kept
 - Firebase mode: data is stored in your Firebase project
 - API keys you enter in Options are saved to localStorage in your browser
 - LLM calls are made from your browser to providers you select
+- Site icons: Bookmarkit shows an icon saved with the bookmark, otherwise your browser’s own
+  favicon cache (extension only), otherwise a neutral placeholder. Nothing is fetched from a
+  third party unless you turn on “Load site icons from Google” under Options → Privacy, which
+  sends each visible bookmark’s domain — never its path or query — to google.com.
 
 ## Troubleshooting
 
