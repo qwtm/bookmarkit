@@ -254,9 +254,10 @@ If an LLM provider is configured, “Remove Duplicates” then takes a second lo
 the pairs no rule can settle — the same article under a canonical and a
 syndicated URL, or a paginated page and its print view. Those proposals appear in
 the same confirmation dialog with the reason for each pair spelled out, so nothing
-is deleted before you have read why it was suggested. With no provider configured,
-or an encrypted key you have not unlocked this session, the rule-based pass is all
-that runs, exactly as before.
+is deleted before you have read why it was suggested. Without a usable provider —
+no API key entered, or an encrypted key you have not unlocked this session — the
+rule-based pass is all that runs and nothing leaves your machine, exactly as
+before.
 
 ## Keyboard shortcuts
 

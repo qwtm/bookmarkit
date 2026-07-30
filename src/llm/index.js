@@ -24,6 +24,32 @@ export const LLM_PROVIDERS = {
   LMSTUDIO: "lmstudio",
 };
 
+/**
+ * Providers that reach a third party, and need a key to be asked anything.
+ * Ollama and LM Studio run on the user's own machine and need nothing.
+ */
+const KEY_REQUIRED = new Set([LLM_PROVIDERS.GEMINI, LLM_PROVIDERS.OPENAI, LLM_PROVIDERS.GROK]);
+
+/**
+ * Whether this provider can actually be asked something.
+ *
+ * A provider name alone is not consent: `gemini` is the default before anything
+ * is configured, so a feature that read the name and called anyway would send
+ * bookmark titles to a remote API for a request destined to fail on its missing
+ * key. Anything that transmits user data on its own initiative — rather than
+ * because the user typed a query — checks this first.
+ *
+ * @param {string} provider
+ * @param {object} [options] The merged provider options, build-time ones included.
+ * @returns {boolean}
+ */
+export function isProviderReady(provider, options = {}) {
+  const p = (provider || "").toString().toLowerCase();
+  if (!p) return false;
+  if (!KEY_REQUIRED.has(p)) return true;
+  return String(options?.apiKey ?? "").trim().length > 0;
+}
+
 export function createLLM(provider = LLM_PROVIDERS.GEMINI, options = {}) {
   const p = (provider || "").toString().toLowerCase();
   switch (p) {

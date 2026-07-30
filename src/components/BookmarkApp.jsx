@@ -426,10 +426,16 @@ const BookmarkApp = () => {
     [saveBookmark]
   );
 
-  const handleDeleteBookmark = useCallback((id) => {
-    setBookmarksToDelete([id]);
+  // #86: Staging a deletion always says why, even when the reason is "you asked".
+  // Two setters that had to move together is how a stale "same page as" line ends
+  // up explaining an unrelated delete.
+  const stageDeletion = useCallback((ids, reasons = []) => {
+    setBookmarksToDelete(ids);
+    setDuplicateReasons(reasons);
     setIsDeleteConfirmModalOpen(true);
   }, []);
+
+  const handleDeleteBookmark = useCallback((id) => stageDeletion([id]), [stageDeletion]);
 
   // UX-09: Keep modal open during delete; show error on failure; success toast
   const handleConfirmDelete = useCallback(async () => {
@@ -460,6 +466,7 @@ const BookmarkApp = () => {
     } finally {
       setIsDeleting(false);
       setBookmarksToDelete([]);
+      setDuplicateReasons([]);
     }
   }, [bookmarks, bookmarksToDelete, deleteBookmarks, appendBookmarks, storeRef, scheduleUndo]);
 
@@ -571,10 +578,8 @@ const BookmarkApp = () => {
       showCustomMessage("No duplicate bookmarks found in the current view.", "info");
       return;
     }
-    setDuplicateReasons(reasons);
-    setBookmarksToDelete(ids);
-    setIsDeleteConfirmModalOpen(true);
-  }, [displayedBookmarks, proposeSemanticDuplicates]);
+    stageDeletion(ids, reasons);
+  }, [displayedBookmarks, proposeSemanticDuplicates, stageDeletion]);
 
   const resetSearch = useCallback(() => {
     setLastAction(null);
@@ -669,8 +674,7 @@ const BookmarkApp = () => {
             : [];
         if (ids.length === 0) showCustomMessage("Please select bookmark(s) to delete.", "info");
         else {
-          setBookmarksToDelete(ids);
-          setIsDeleteConfirmModalOpen(true);
+          stageDeletion(ids);
           setSelectedBookmarkId(null);
           setMultiSelectedBookmarkIds([]);
         }
@@ -696,8 +700,7 @@ const BookmarkApp = () => {
             : [];
         if (ids.length > 0) {
           e.preventDefault();
-          setBookmarksToDelete(ids);
-          setIsDeleteConfirmModalOpen(true);
+          stageDeletion(ids);
           setSelectedBookmarkId(null);
           setMultiSelectedBookmarkIds([]);
         } else showCustomMessage("Please select bookmark(s) to delete.", "info");
@@ -844,11 +847,8 @@ const BookmarkApp = () => {
             inView.filter((b) => !certain.includes(b.id))
           );
           const ids = [...certain, ...likely];
-          if (ids.length > 0) {
-            setDuplicateReasons(reasons);
-            setBookmarksToDelete(ids);
-            setIsDeleteConfirmModalOpen(true);
-          } else showCustomMessage("No duplicate bookmarks found in the current view.", "info");
+          if (ids.length > 0) stageDeletion(ids, reasons);
+          else showCustomMessage("No duplicate bookmarks found in the current view.", "info");
         }
         if (
           ["reorder", "reorderAscending", "reorderDescending", "persistSortedOrder"].includes(

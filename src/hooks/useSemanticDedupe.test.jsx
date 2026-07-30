@@ -4,9 +4,11 @@ import { render, act } from "@testing-library/react";
 
 const generate = vi.fn();
 
-vi.mock("../llm/index.js", () => ({
+// Only the call is faked. Which providers count as configured is real behavior
+// this hook depends on, so it is not worth restating in a mock.
+vi.mock("../llm/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   createLLM: vi.fn(() => ({ generate })),
-  LLM_PROVIDERS: { GEMINI: "gemini" },
 }));
 
 const { useSemanticDedupe } = await import("./useSemanticDedupe.js");
@@ -96,6 +98,32 @@ describe("useSemanticDedupe (#86)", () => {
 
     expect(proposal).toEqual({ ids: [], reasons: [] });
     expect(createLLM).not.toHaveBeenCalled();
+  });
+
+  // #86 review: `gemini` is the default before anything is configured, so a
+  // provider name is not permission to send this collection anywhere.
+  it("asks nothing when the configured provider has no key", async () => {
+    setup({ providerOptions: {} });
+
+    let proposal;
+    await act(async () => {
+      proposal = await dedupe.propose([canonical, syndicated]);
+    });
+
+    expect(proposal).toEqual({ ids: [], reasons: [] });
+    expect(createLLM).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("asks a local provider without asking for a key", async () => {
+    generate.mockResolvedValue("[]");
+    setup({ provider: "ollama", providerOptions: {} });
+
+    await act(async () => {
+      await dedupe.propose([canonical, syndicated]);
+    });
+
+    expect(generate).toHaveBeenCalled();
   });
 
   it("asks nothing while the key is locked", async () => {

@@ -11,7 +11,7 @@
 import { useCallback, useRef, useState } from "react";
 
 import { contained } from "../llm/containment.js";
-import { createLLM, LLM_PROVIDERS } from "../llm/index.js";
+import { createLLM, isProviderReady, LLM_PROVIDERS } from "../llm/index.js";
 import {
   findNearDuplicateCandidates,
   parseDuplicateVerdicts,
@@ -65,14 +65,17 @@ export function useSemanticDedupe({ provider, providerOptions, locked }) {
     const { provider, providerOptions, locked } = latest.current;
     const chosen =
       provider || (typeof __llm_provider__ !== "undefined" && __llm_provider__) || null;
-    if (!chosen || locked) return NOTHING;
+    const options = optionsFor(providerOptions);
+    // `gemini` is the default before anything is configured, so the name alone is
+    // not permission to send this collection's titles to a remote API.
+    if (locked || !isProviderReady(chosen, options)) return NOTHING;
 
     const pairs = findNearDuplicateCandidates(list);
     if (pairs.length === 0) return NOTHING;
 
     setIsAsking(true);
     try {
-      const llm = createLLM(chosen || LLM_PROVIDERS.GEMINI, optionsFor(providerOptions));
+      const llm = createLLM(chosen || LLM_PROVIDERS.GEMINI, options);
       const answer = await llm.generate(promptFor(pairs));
       const verdicts = parseDuplicateVerdicts(answer, pairs);
       return proposeDuplicateRemovals(pairs, verdicts);

@@ -90,8 +90,13 @@ inside the trust boundary:
   it was proposed. Which copy survives is decided by the same rule the
   deterministic layer uses, not by the model.
 
-With no provider configured, a locked key, or a failed request, the proposal is
-empty and the rule-based result stands on its own.
+With no usable provider, a locked key, or a failed request, the proposal is empty
+and the rule-based result stands on its own. "Usable" is `isProviderReady`, not a
+provider name: `gemini` is the default before anything is configured, so a feature
+that transmits on its own initiative — rather than because the user typed a query
+— would otherwise send this collection's titles to a remote API for a request
+destined to fail on its missing key. Providers running on the user's own machine
+need nothing.
 
 ## LLM boundary
 
