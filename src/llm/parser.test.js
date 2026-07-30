@@ -87,6 +87,18 @@ describe("parseAgentResponse", () => {
     ]);
   });
 
+  it("keeps looking past a format example the model wrote first (#28)", () => {
+    const text =
+      'Each step looks like {"action": "<name>", "parameters": {}}.\n' +
+      'Here is yours: [{"action":"resetSearch"}]';
+    expect(parseAgentResponse(text)).toEqual([{ action: "resetSearch", parameters: {} }]);
+  });
+
+  it("keeps looking past a brace that never closes (#28)", () => {
+    const text = 'Something like { unfinished thought...\nPlan: [{"action":"showAllBookmarks"}]';
+    expect(parseAgentResponse(text)).toEqual([{ action: "showAllBookmarks", parameters: {} }]);
+  });
+
   it("unwraps an envelope whose text is itself fenced (#28)", () => {
     const envelope = JSON.stringify({
       choices: [{ message: { content: '```json\n[{"action":"showAllBookmarks"}]\n```' } }],

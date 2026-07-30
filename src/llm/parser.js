@@ -226,12 +226,10 @@ const PROVIDER_UNWRAPPERS = {
 
 // ─── JSON extraction ──────────────────────────────────────────────────────────
 
-// #28: Find the first balanced {...} or [...] anywhere in the text, so a model
-// that wraps its JSON in prose still yields steps. Quotes and escapes are
-// tracked, otherwise a brace inside a search term would end the scan early.
-function scanBalancedJson(text) {
-  const start = text.search(/[[{]/u);
-  if (start === -1) return null;
+// The index just past the value opening at `start`, or -1 if it never closes.
+// Quotes and escapes are tracked, otherwise a brace inside a search term would
+// end the scan early.
+function balancedEnd(text, start) {
   const open = text[start];
   const close = open === "{" ? "}" : "]";
   let depth = 0;
@@ -248,15 +246,32 @@ function scanBalancedJson(text) {
     } else if (char === open) {
       depth++;
     } else if (char === close && --depth === 0) {
-      return text.slice(start, i + 1);
+      return i + 1;
     }
+  }
+  return -1;
+}
+
+// #28: The next balanced {...} or [...] at or after `from`, so a model that
+// wraps its JSON in prose still yields steps. An opener that never closes is
+// skipped rather than ending the search, since the real value may follow it.
+function nextBalancedJson(text, from) {
+  let cursor = from;
+  while (cursor < text.length) {
+    const offset = text.slice(cursor).search(/[[{]/u);
+    if (offset === -1) return null;
+    const start = cursor + offset;
+    const end = balancedEnd(text, start);
+    if (end !== -1) return { json: text.slice(start, end), end };
+    cursor = start + 1;
   }
   return null;
 }
 
-// #28: Every shape the JSON might arrive in, most explicit first. Each fenced
-// block is offered, not just the first, because a model that explains itself in
-// one fence and answers in the next used to be read as an empty plan.
+// #28: Every shape the JSON might arrive in, most explicit first. Fenced blocks
+// and brace-balanced regions are each offered in turn, not just the first,
+// because a model that describes the format before answering — or explains
+// itself in one fence and answers in the next — used to be read as an empty plan.
 function* jsonCandidates(text) {
   for (const [, body] of text.matchAll(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/giu)) {
     const fenced = body.trim();
@@ -264,29 +279,42 @@ function* jsonCandidates(text) {
   }
   const trimmed = text.trim();
   if (trimmed) yield trimmed;
-  const scanned = scanBalancedJson(text);
-  if (scanned) yield scanned;
-}
-
-// Returns { value } for the first candidate that parses, or null when none do —
-// wrapped so a response of literal `null` is distinguishable from failure.
-function parseFirstJson(text) {
-  if (!text) return null;
-  for (const candidate of jsonCandidates(text)) {
-    try {
-      return { value: JSON.parse(candidate) };
-    } catch {
-      // Not this shape — try the next.
-    }
+  for (let at = 0; at < text.length;) {
+    const found = nextBalancedJson(text, at);
+    if (!found) break;
+    yield found.json;
+    at = found.end;
   }
-  return null;
 }
 
-// A usable plan is a step, or a list containing one. Anything else (a provider's
-// API envelope, say) means we have not found the steps yet.
+/**
+ * The candidate most likely to be the plan: the first that looks like one, else
+ * the first that parses at all — a provider envelope has to survive this step so
+ * it can be unwrapped. Wrapped in an object so a response of literal `null` is
+ * distinguishable from failure; null when nothing parses.
+ */
+function parseBestJson(text) {
+  if (!text) return null;
+  let firstParsed = null;
+  for (const candidate of jsonCandidates(text)) {
+    let value;
+    try {
+      value = JSON.parse(candidate);
+    } catch {
+      continue; // Not this shape — try the next.
+    }
+    if (looksLikePlan(value)) return { value };
+    firstParsed ??= { value };
+  }
+  return firstParsed;
+}
+
+// A usable plan is a step we can act on, or a list containing one. Requiring a
+// known action, not merely an `action` string, is what separates the plan from a
+// format example the model wrote out first — and from a provider API envelope.
 function looksLikePlan(value) {
   const steps = Array.isArray(value) ? value : [value];
-  return steps.some((step) => step && typeof step === "object" && typeof step.action === "string");
+  return steps.some((step) => step && typeof step === "object" && KNOWN_ACTIONS.has(step.action));
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -308,14 +336,14 @@ export function parseAgentResponse(responseText, providerName) {
 
   // Step 1: Read the JSON out of the response, whether it is fenced, bare, or
   // surrounded by prose.
-  let result = parseFirstJson(responseText);
+  let result = parseBestJson(responseText);
 
   // Step 2: What parsed may be a provider API envelope rather than the plan —
   // unwrap it and read the text inside (ARCH-01).
   if (providerName && !looksLikePlan(result?.value)) {
     const unwrap = PROVIDER_UNWRAPPERS[providerName];
     const inner = unwrap && result?.value ? unwrap(result.value) : "";
-    const unwrapped = inner ? parseFirstJson(inner) : null;
+    const unwrapped = inner ? parseBestJson(inner) : null;
     if (unwrapped) result = unwrapped;
   }
 
