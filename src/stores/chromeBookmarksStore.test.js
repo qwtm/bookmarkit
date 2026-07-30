@@ -41,6 +41,26 @@ describe("teardown (#19)", () => {
     expect(seen).toEqual([]);
   });
 
+  // The debounce that makes a burst cost one tree walk also means a walk can be
+  // scheduled and not yet run. Teardown has to cancel it, or an unloading page
+  // reaches for chrome.bookmarks after it is gone.
+  it("cancels a notify that was already scheduled", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createChromeBookmarksStore();
+      await store.init();
+      fake.bookmarks.onCreated.dispatch("x", {});
+      const readTree = vi.spyOn(globalThis.chrome.bookmarks, "getTree");
+
+      store.teardown();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(readTree).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not accumulate listeners when a store is re-initialized", async () => {
     const first = createChromeBookmarksStore();
     await first.init();
