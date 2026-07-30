@@ -18,6 +18,7 @@ import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { remoteFaviconsEnabled, setRemoteFaviconsEnabled } from "../utils/favicon.js";
 import { encryptString, decryptString, isEncryptedBlob } from "../utils/keyCrypto.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useDebounce } from "../hooks/useDebounce.js";
 
@@ -313,15 +314,11 @@ const BookmarkApp = () => {
   const agentAbortControllerRef = useRef(null);
   const agentLastCallTimestampRef = useRef(0);
 
-  // Stable refs for keyboard shortcut handlers
+  // Read by an effect that must not resubscribe when the list changes.
   const bookmarksRef = useRef(bookmarks);
-  const selectedBookmarkIdRef = useRef(selectedBookmarkId);
-  const multiSelectedBookmarkIdsRef = useRef(multiSelectedBookmarkIds);
   useEffect(() => {
     bookmarksRef.current = bookmarks;
-    selectedBookmarkIdRef.current = selectedBookmarkId;
-    multiSelectedBookmarkIdsRef.current = multiSelectedBookmarkIds;
-  }, [bookmarks, selectedBookmarkId, multiSelectedBookmarkIds]);
+  }, [bookmarks]);
 
   // PERF-07: Debounce search for displayedBookmarks (input updates instantly; search updates after 300ms)
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -610,114 +607,79 @@ const BookmarkApp = () => {
   }, []);
 
   // ─── Keyboard shortcuts ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const onKeyDown = async (e) => {
-      const tag = e.target?.tagName?.toLowerCase();
-      const isTypingContext =
-        ["input", "textarea", "select"].includes(tag) || e.target?.isContentEditable;
-      if (isTypingContext) return;
-      if (e.key === "Escape") {
-        setSelectedBookmarkId(null);
-        setMultiSelectedBookmarkIds([]);
-        setBookmarksToDelete([]);
-      }
-      if (e.key === "h" || e.key === "H") setIsHeaderVisible((prev) => !prev);
-      if (e.key === "c" && selectedBookmarkIdRef.current) {
-        const selected = bookmarksRef.current.find((b) => b.id === selectedBookmarkIdRef.current);
-        if (selected?.url) {
-          setIsProcessing(true);
-          // SEC-05: URL validation stub (corsproxy removed)
-          setIsProcessing(false);
-          showCustomMessage("URL check not available in extension context.", "info");
-        }
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+  const clearSelection = useCallback(() => {
+    setSelectedBookmarkId(null);
+    setMultiSelectedBookmarkIds([]);
+    setBookmarksToDelete([]);
   }, []);
 
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      const tag = e.target?.tagName?.toLowerCase();
-      const isTypingContext =
-        ["input", "textarea", "select"].includes(tag) || e.target?.isContentEditable;
-      if (
-        isTypingContext ||
-        isModalOpen ||
-        isImportExportModalOpen ||
-        isDeleteConfirmModalOpen ||
-        isHelpModalOpen
-      )
-        return;
-      const isMac = navigator.userAgentData
-        ? navigator.userAgentData.platform?.toUpperCase().includes("MAC")
-        : navigator.userAgent.toUpperCase().includes("MAC");
-      if (e.key === "Escape") {
-        setSelectedBookmarkId(null);
-        setMultiSelectedBookmarkIds([]);
-        setBookmarksToDelete([]);
-        return;
-      }
-      const comboA = (isMac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "a";
-      const comboD = (isMac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "d";
+  // Whichever selection the user made: the focused bookmark, or the checked ones.
+  const selectedIds = useMemo(
+    () =>
+      selectedBookmarkId
+        ? [selectedBookmarkId]
+        : multiSelectedBookmarkIds.length
+          ? [...multiSelectedBookmarkIds]
+          : [],
+    [selectedBookmarkId, multiSelectedBookmarkIds]
+  );
+
+  const confirmDeleteSelection = useCallback(() => {
+    if (selectedIds.length === 0) {
+      showCustomMessage("Please select bookmark(s) to delete.", "info");
+      return;
+    }
+    setBookmarksToDelete(selectedIds);
+    setIsDeleteConfirmModalOpen(true);
+    setSelectedBookmarkId(null);
+    setMultiSelectedBookmarkIds([]);
+  }, [selectedIds, showCustomMessage]);
+
+  // #27: An open dialog owns the keyboard. Escape inside one closes it and stops
+  // there, and the rest of the shortcuts stay bound but inactive rather than
+  // reaching the list behind the dialog.
+  const isDialogOpen =
+    isModalOpen ||
+    isImportExportModalOpen ||
+    isDeleteConfirmModalOpen ||
+    isHelpModalOpen ||
+    isOptionsOpen ||
+    isMessageModalOpen;
+
+  useKeyboardShortcuts(
+    {
+      Escape: clearSelection,
+      h: () => setIsHeaderVisible((prev) => !prev),
       // #22: select the currently visible (filtered) bookmarks, not the whole store
-      if (comboA) {
-        e.preventDefault();
+      "Mod+a": (event) => {
+        event.preventDefault();
         setMultiSelectedBookmarkIds(displayedBookmarks.map((b) => b.id));
-      }
-      if (comboD) {
-        e.preventDefault();
-        const ids = selectedBookmarkId
-          ? [selectedBookmarkId]
-          : multiSelectedBookmarkIds.length
-            ? [...multiSelectedBookmarkIds]
-            : [];
-        if (ids.length === 0) showCustomMessage("Please select bookmark(s) to delete.", "info");
-        else {
-          stageDeletion(ids);
-          setSelectedBookmarkId(null);
-          setMultiSelectedBookmarkIds([]);
-        }
-      }
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "e") {
-        const id =
-          selectedBookmarkId ||
-          (multiSelectedBookmarkIds.length === 1 ? multiSelectedBookmarkIds[0] : null);
-        if (id) {
-          const b = bookmarks.find((x) => x.id === id);
-          if (b) {
-            e.preventDefault();
-            setEditingBookmark(b);
-            setIsModalOpen(true);
-          }
-        }
-      }
-      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "d") {
-        const ids = selectedBookmarkId
-          ? [selectedBookmarkId]
-          : multiSelectedBookmarkIds.length
-            ? [...multiSelectedBookmarkIds]
-            : [];
-        if (ids.length > 0) {
-          e.preventDefault();
-          stageDeletion(ids);
-          setSelectedBookmarkId(null);
-          setMultiSelectedBookmarkIds([]);
-        } else showCustomMessage("Please select bookmark(s) to delete.", "info");
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    bookmarks,
-    displayedBookmarks,
-    selectedBookmarkId,
-    multiSelectedBookmarkIds,
-    isModalOpen,
-    isImportExportModalOpen,
-    isDeleteConfirmModalOpen,
-    isHelpModalOpen,
-  ]);
+      },
+      "Mod+d": (event) => {
+        event.preventDefault();
+        confirmDeleteSelection();
+      },
+      d: (event) => {
+        event.preventDefault();
+        confirmDeleteSelection();
+      },
+      e: (event) => {
+        const id = selectedBookmarkId || (selectedIds.length === 1 ? selectedIds[0] : null);
+        const bookmark = id && bookmarks.find((b) => b.id === id);
+        if (!bookmark) return;
+        event.preventDefault();
+        setEditingBookmark(bookmark);
+        setIsModalOpen(true);
+      },
+      c: () => {
+        const selected = bookmarks.find((b) => b.id === selectedBookmarkId);
+        // SEC-05: URL validation stub (corsproxy removed)
+        if (selected?.url)
+          showCustomMessage("URL check not available in extension context.", "info");
+      },
+    },
+    { enabled: !isDialogOpen }
+  );
 
   // ─── Persisted reorder (UX-05: with undo) ───────────────────────────────────
   const persistReorder = useCallback(
