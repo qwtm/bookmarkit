@@ -30,6 +30,12 @@ const fakeStore = (initial) => {
       bookmarks = bookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b));
       notify(bookmarks);
     }),
+    updateMany: vi.fn(async (patches) => {
+      for (const { id, ...patch } of patches) {
+        bookmarks = bookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b));
+      }
+      notify(bookmarks);
+    }),
     remove: vi.fn(async (id) => {
       bookmarks = bookmarks.filter((b) => b.id !== id);
       notify(bookmarks);
@@ -197,6 +203,77 @@ describe("useBookmarkStore undo recording (#56)", () => {
     await undoLast();
 
     expect(recorded).toHaveLength(1);
+  });
+
+  it("takes a bulk edit back in one step, field by field", async () => {
+    await mount([
+      { id: "1", title: "One", tags: ["react"], rating: 3 },
+      { id: "2", title: "Two", tags: [], rating: 0 },
+    ]);
+
+    await act(async () => {
+      await hook.applyBulkEdit([
+        { id: "1", tags: ["react", "reading"] },
+        { id: "2", tags: ["reading"] },
+      ]);
+    });
+    expect(store.current().map((b) => b.tags)).toEqual([["react", "reading"], ["reading"]]);
+
+    // One entry for the batch, not one per bookmark.
+    expect(recorded).toHaveLength(1);
+    await undoLast();
+
+    expect(store.current().map((b) => b.tags)).toEqual([["react"], []]);
+    // The rating was not part of the edit, so undoing it did not touch it.
+    expect(store.current().map((b) => b.rating)).toEqual([3, 0]);
+  });
+
+  it("asks the store to write a bulk edit in one round-trip when it can", async () => {
+    await mount([
+      { id: "1", tags: [] },
+      { id: "2", tags: [] },
+    ]);
+
+    await act(async () => {
+      await hook.applyBulkEdit([
+        { id: "1", tags: ["a"] },
+        { id: "2", tags: ["a"] },
+      ]);
+    });
+
+    expect(store.updateMany).toHaveBeenCalledTimes(1);
+    expect(store.update).not.toHaveBeenCalled();
+  });
+
+  it("walks a store that cannot, rather than refusing the edit", async () => {
+    store = fakeStore([
+      { id: "1", tags: [] },
+      { id: "2", tags: [] },
+    ]);
+    delete store.updateMany;
+    render(<Probe />);
+    await waitFor(() => expect(hook.isLoading).toBe(false));
+
+    await act(async () => {
+      await hook.applyBulkEdit([
+        { id: "1", tags: ["a"] },
+        { id: "2", tags: ["a"] },
+      ]);
+    });
+
+    expect(store.update).toHaveBeenCalledTimes(2);
+    expect(store.current().map((b) => b.tags)).toEqual([["a"], ["a"]]);
+  });
+
+  it("records nothing for a bulk edit with no patches", async () => {
+    await mount([{ id: "1", tags: [] }]);
+
+    await act(async () => {
+      await hook.applyBulkEdit([]);
+    });
+
+    expect(recorded).toHaveLength(0);
+    expect(store.updateMany).not.toHaveBeenCalled();
   });
 
   it("records nothing for a surface that offers no undo", async () => {

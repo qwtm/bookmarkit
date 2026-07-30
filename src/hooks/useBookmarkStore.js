@@ -7,6 +7,7 @@
 import { useCallback, useRef, useState } from "react";
 import { getStore, STORE_TYPES } from "../stores/index.js";
 import { inverseOf } from "../utils/bookmarkUndo.js";
+import { previousValuesFor } from "../utils/bulkEdit.js";
 
 const firebaseConfig =
   typeof __firebase_config !== "undefined" ? JSON.parse(__firebase_config) : undefined;
@@ -212,12 +213,32 @@ export function useBookmarkStore(recordUndo) {
     await storeRef.current?.reorderBookmarks?.(orderedIds);
   }, []);
 
+  // #54: One write and one undo entry for a whole selection. Stores that can do
+  // it in a single round-trip say so with updateMany; the rest are walked, which
+  // is what the shape of the contract already assumes elsewhere.
+  const applyBulkEdit = useCallback(
+    async (patches) => {
+      if (!storeRef.current || !patches?.length) return;
+      const previousPatches = previousValuesFor(patches, bookmarksRef.current);
+      if (typeof storeRef.current.updateMany === "function") {
+        await storeRef.current.updateMany(patches);
+      } else {
+        for (const { id, ...patch } of patches) {
+          await storeRef.current.update(id, patch);
+        }
+      }
+      remember({ kind: "bulkEdit", previousPatches });
+    },
+    [remember]
+  );
+
   const writes = {
     saveBookmark,
     deleteBookmarks,
     saveAllBookmarks,
     appendBookmarks,
     reorderBookmarks,
+    applyBulkEdit,
   };
   writesRef.current = writes;
 
