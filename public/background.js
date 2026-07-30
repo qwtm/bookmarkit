@@ -72,6 +72,71 @@ function isPublicHttpUrl(raw) {
   return Boolean(url) && !isPrivateOrLoopbackHost(url.hostname);
 }
 
+// #48: How much of a page is read before the rest is dropped. Enough for a head
+// and some opening prose; small enough that a hostile or enormous page cannot
+// cost the worker its memory.
+const PAGE_BYTE_CAP = 256 * 1024;
+
+// Read at most `cap` bytes of the body and stop, cancelling the rest rather than
+// waiting for a stream that may never end.
+async function readCapped(response, cap) {
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const decoder = new TextDecoder("utf-8");
+  let text = "";
+  let read = 0;
+  try {
+    while (read < cap) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // One chunk can be larger than what is left of the allowance, so the cap is
+      // enforced on the bytes taken, not on the bytes asked for.
+      const remaining = cap - read;
+      const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      read += chunk.byteLength;
+      text += decoder.decode(chunk, { stream: true });
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return text;
+}
+
+// #48: Fetch a page so the app can read what it says about itself. Same two
+// guards as CHECK_URL — our own extension pages only, public http(s) only — plus:
+//  - `credentials: "omit"`, so the user's cookies are never sent. What comes back
+//    is the page as an anonymous visitor sees it, never their logged-in view.
+//  - `redirect: "manual"`, for the reason #10 gives: a 30x Location can name an
+//    internal host, and the redirected request would fire before we could look.
+//  - HTML only, and only the first PAGE_BYTE_CAP bytes of it.
+// The HTML is handed back as a string. Parsing happens in the app, by scanning
+// the string — a service worker has no DOM, and this is not markup to build one
+// from anyway.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type !== "FETCH_PAGE_META") return false;
+  if (sender.id !== chrome.runtime.id) return false;
+  if (!isPublicHttpUrl(message.url)) {
+    sendResponse({ ok: false });
+    return false;
+  }
+  fetch(message.url, {
+    method: "GET",
+    redirect: "manual",
+    credentials: "omit",
+    signal: AbortSignal.timeout(5000),
+  })
+    .then(async (res) => {
+      const type = res.headers.get("content-type") || "";
+      if (res.type === "opaqueredirect" || !res.ok || !/text\/html|xhtml/i.test(type)) {
+        sendResponse({ ok: false });
+        return;
+      }
+      sendResponse({ ok: true, html: await readCapped(res, PAGE_BYTE_CAP) });
+    })
+    .catch(() => sendResponse({ ok: false }));
+  return true; // keep message channel open for async response
+});
+
 // URL validation — runs in the service worker context which bypasses CORS restrictions.
 // Returns { status: 'valid'|'invalid', redirectUrl: string|null }
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
