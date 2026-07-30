@@ -113,6 +113,20 @@ export function createFakeChromeBookmarks() {
       walk("1", []);
       return paths;
     },
+    /** The same for folder nodes, so a test can see the shells a write left. */
+    folderPaths() {
+      const paths = [];
+      const walk = (id, trail) => {
+        for (const childId of children.get(id)) {
+          const node = nodes.get(childId);
+          if (node.url) continue;
+          paths.push([...trail, node.title].join("/"));
+          walk(childId, [...trail, node.title]);
+        }
+      };
+      walk("1", []);
+      return paths;
+    },
   };
 }
 
