@@ -51,6 +51,27 @@ const clean = (value, cap = FIELD_CAP) =>
     .trim()
     .slice(0, cap);
 
+/**
+ * An element and everything inside it, ended the way a parser would end it.
+ *
+ * A closing tag is not only `</script>`: `</script foo>` and `</script\n/>` close
+ * one too, and an element with no closing tag at all runs to the end of the
+ * document. A pattern that insisted on the tidy form would leave a script's body in
+ * the prose — which is how a page's code reaches a prompt, and this is the most
+ * untrusted input the app handles.
+ */
+const elementWithBody = (name) =>
+  new RegExp(`<${name}\\b[^>]*>[\\s\\S]*?(?:</${name}(?:[\\s/][^>]*)?>|$)`, "gi");
+
+const SCRIPTS = elementWithBody("script");
+const STYLES = elementWithBody("style");
+
+// The title is read with the same lenient closer but no run-to-the-end fallback,
+// because the two have opposite safe failures: an unterminated script should take
+// the rest of the document with it, while an unterminated title should yield no
+// title — the body of a page is not its name — and let og:title answer instead.
+const TITLE = /<title\b[^>]*>([\s\S]*?)<\/title(?:[\s/][^>]*)?>/i;
+
 /** Attributes of one tag, lower-cased names, as a plain object. */
 function attributesOf(tag) {
   const attributes = {};
@@ -95,12 +116,12 @@ export function extractPageMetadata(html) {
   // Scripts and styles are not what a page says; dropping them first also keeps
   // their contents out of the text sample.
   const prose = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ")
+    .replace(SCRIPTS, " ")
+    .replace(STYLES, " ")
     .replace(/<!--[\s\S]*?-->/g, " ");
 
   const values = metaValues(prose);
-  const titleTag = prose.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
+  const titleTag = prose.match(TITLE);
 
   return {
     title: clean(titleTag?.[1]) || firstOf(values, TITLE_KEYS),

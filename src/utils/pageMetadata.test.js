@@ -57,6 +57,40 @@ describe("extractPageMetadata", () => {
     expect(text).not.toContain("noise");
   });
 
+  // A parser ends a script at `</script` followed by whitespace or a slash, not
+  // only at the tidy `</script>`. Insisting on the tidy form is how a page keeps
+  // its code in the text a model is later shown.
+  it("ends a script where a parser would, not only where it is tidy", () => {
+    for (const closer of ["</script>", "</script >", "</script\t\n bar>", "</script/>"]) {
+      const html = page("", `<script>const secret = "script noise";${closer}<p>Prose.</p>`);
+
+      const { text } = extractPageMetadata(html);
+
+      expect(text).toContain("Prose.");
+      expect(text).not.toContain("noise");
+    }
+  });
+
+  it("drops a script that is never closed, as a parser would", () => {
+    const { text } = extractPageMetadata(page("", `<p>Prose.</p><script>const a = "noise";`));
+
+    expect(text).toBe("Prose.");
+  });
+
+  it("ends a style and a title on the same lenient terms", () => {
+    const html = page(
+      `<style>.a{content:"stylesheet noise"}</style bar>
+       <title>Ownership</title
+       >`,
+      "<p>Prose.</p>"
+    );
+
+    expect(extractPageMetadata(html)).toMatchObject({
+      title: "Ownership",
+      text: "Ownership Prose.",
+    });
+  });
+
   it("keeps words apart where the markup did", () => {
     const { text } = extractPageMetadata(page("", "<li>first</li><li>second</li>"));
 
