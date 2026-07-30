@@ -151,4 +151,11 @@ describe("the week's actions (#50)", () => {
       { action: "weeklyDigest", parameters: {} },
     ]);
   });
+
+  // A sort the menus offer but the parser rejects becomes a silent sort by title.
+  it("sorts by last opened, as the manual sort does", () => {
+    expect(
+      parseAgentResponse('[{"action":"sortBookmarks","parameters":{"sortBy":"lastOpenedAt"}}]')
+    ).toEqual([{ action: "sortBookmarks", parameters: { sortBy: "lastOpenedAt", order: "asc" } }]);
+  });
 });

@@ -121,6 +121,21 @@ const groupNameFor = (bookmark) => {
 };
 
 /**
+ * The themes, plus whatever they left out.
+ *
+ * The section counts the week's additions and then renders them theme by theme, so
+ * a bookmark no theme claimed would be counted and never shown — which happens
+ * whenever grouping is capped, and whenever a model quietly omits an id. Sweeping
+ * the remainder into a last group keeps the section's promise: everything saved
+ * this week is in it.
+ */
+export function withRemainder(themes = [], added = []) {
+  const claimed = new Set(themes.flatMap((theme) => theme.ids));
+  const rest = added.map((bookmark) => bookmark?.id).filter((id) => id && !claimed.has(id));
+  return rest.length === 0 ? themes : [...themes, { title: "Also saved", summary: "", ids: rest }];
+}
+
+/**
  * A theme's bookmarks, in the order the theme named them.
  *
  * Kept out of the modal because "which bookmarks does this group refer to" is the

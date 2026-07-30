@@ -9,7 +9,13 @@ import { useCallback, useRef, useState } from "react";
 
 import { contained } from "../llm/containment.js";
 import { createLLM, isProviderReady } from "../llm/index.js";
-import { digestSets, fallbackThemes, hasDigest, parseDigestThemes } from "../utils/digest.js";
+import {
+  digestSets,
+  fallbackThemes,
+  hasDigest,
+  parseDigestThemes,
+  withRemainder,
+} from "../utils/digest.js";
 
 /** Provider options with empty values dropped, so provider defaults apply. */
 const optionsFor = (providerOptions) => {
@@ -60,7 +66,7 @@ export function useDigest({ provider, providerOptions, locked }) {
       provider || (typeof __llm_provider__ !== "undefined" && __llm_provider__) || null;
     const options = optionsFor(providerOptions);
     if (locked || !chosen || !isProviderReady(chosen, options)) {
-      return { ...sets, themes: fallbackThemes(sets.added) };
+      return { ...sets, themes: withRemainder(fallbackThemes(sets.added), sets.added) };
     }
 
     setRunning(true);
@@ -69,10 +75,13 @@ export function useDigest({ provider, providerOptions, locked }) {
       const themes = parseDigestThemes(answer, sets.added);
       // An answer that named no group it was shown is not an answer; the
       // deterministic grouping is better than a digest with a missing section.
-      return { ...sets, themes: themes.length > 0 ? themes : fallbackThemes(sets.added) };
+      return {
+        ...sets,
+        themes: withRemainder(themes.length > 0 ? themes : fallbackThemes(sets.added), sets.added),
+      };
     } catch (error) {
       console.warn("Digest themes unavailable:", error);
-      return { ...sets, themes: fallbackThemes(sets.added) };
+      return { ...sets, themes: withRemainder(fallbackThemes(sets.added), sets.added) };
     } finally {
       setRunning(false);
     }

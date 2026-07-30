@@ -32,6 +32,8 @@ const ACTIONS = [
   "findWithTags({includeTags,excludeTags?})",
   "filterByRating({minRating?,maxRating?,comparator?,exact?})",
   "findBrokenLinks",
+  "findNeverOpened",
+  "weeklyDigest",
   "sortBookmarks({sortBy,order})",
   "limitResults({count,direction?,scope?})",
   "limitFirst({count})",

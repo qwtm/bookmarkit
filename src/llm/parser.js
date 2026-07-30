@@ -34,7 +34,15 @@ const KNOWN_ACTIONS = new Set([
 ]);
 
 const FIELD_VALUES = new Set(["title", "url", "description", "tags"]);
-const SORT_BY_VALUES = new Set(["title", "rating", "url", "folder", "createdAt", "updatedAt"]);
+const SORT_BY_VALUES = new Set([
+  "title",
+  "rating",
+  "url",
+  "folder",
+  "createdAt",
+  "updatedAt",
+  "lastOpenedAt",
+]);
 const ORDER_VALUES = new Set(["asc", "desc"]);
 const DIRECTION_VALUES = new Set(["first", "last"]);
 const SCOPE_VALUES = new Set(["current", "all"]);

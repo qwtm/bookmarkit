@@ -7,6 +7,7 @@ import {
   hasDigest,
   parseDigestThemes,
   themeItems,
+  withRemainder,
 } from "./digest.js";
 
 const NOW = Date.parse("2026-07-29T12:00:00.000Z");
@@ -117,6 +118,33 @@ describe("fallbackThemes", () => {
       { title: "Everything else", summary: "", ids: ["d"] },
       { title: "rust", summary: "", ids: ["c"] },
     ]);
+  });
+});
+
+describe("withRemainder", () => {
+  it("sweeps up what no theme claimed", () => {
+    const added = [bookmark("a"), bookmark("b"), bookmark("c")];
+    const themes = [{ title: "Work", summary: "", ids: ["a"] }];
+
+    expect(withRemainder(themes, added)).toEqual([
+      { title: "Work", summary: "", ids: ["a"] },
+      { title: "Also saved", summary: "", ids: ["b", "c"] },
+    ]);
+  });
+
+  it("adds nothing when every addition is already named", () => {
+    const added = [bookmark("a"), bookmark("b")];
+    const themes = [{ title: "Work", summary: "", ids: ["a", "b"] }];
+
+    expect(withRemainder(themes, added)).toEqual(themes);
+  });
+
+  it("covers the additions a capped grouping had to drop", () => {
+    const added = Array.from({ length: 12 }, (_, i) => bookmark(`b${i}`, { folderId: `F${i}` }));
+
+    const themes = withRemainder(fallbackThemes(added), added);
+
+    expect(themes.flatMap((theme) => theme.ids).sort()).toEqual(added.map((b) => b.id).sort());
   });
 });
 
