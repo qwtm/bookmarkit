@@ -37,6 +37,9 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
   - One‑click “Ignore checking” toggle per bookmark
   - Sweep the whole collection for dead links, resumable, and filter to what it
     found
+- Suggestions that read the page, not just its URL
+  - The extension fetches the page in its service worker and feeds its own title,
+    description, and opening text to the model
 - LLM integration (runtime‑configurable)
   - Gemini, OpenAI (ChatGPT), Grok (x.ai), Ollama (local), LM Studio (local)
   - Model discovery (where supported), custom base URLs, stored per provider
@@ -319,6 +322,25 @@ rest, whether or not their toasts are still showing.
   ratings, folders, and notes, not just their titles and URLs.
 - Undo history lives in the page. Closing or reloading the app clears it, and it
   is not offered in the quick‑add popup, which closes as soon as it saves.
+
+## Where suggestions get their facts
+
+“Suggest” for a description or tags used to reason from the URL and whatever title
+the browser supplied, which is close to nothing for an address like
+`example.com/p/8812`. In the extension, the page is now asked directly.
+
+- The fetch happens in the background service worker: public http(s) only, no
+  redirects followed, HTML only, and at most the first 256 KB of it.
+- Cookies are never sent. What the model sees is the page an anonymous visitor
+  gets, not your logged‑in view of it.
+- The HTML is read by scanning the text, never by building a document, so nothing
+  in a fetched page can run, load, or resolve anything.
+- The page's words go to the model inside the same containment as everything else
+  you did not type — it is told not to follow instructions found in there.
+- An empty title is filled in from the page. A title you wrote is never
+  overwritten.
+- In the web build there is no service worker, so suggestions work from the URL as
+  before.
 
 ## Checking for dead links
 
