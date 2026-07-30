@@ -144,6 +144,27 @@ export const mergeAgentPlan = (previous = [], steps = []) => {
   return merged;
 };
 
+/**
+ * The actions that shape what the list shows. Everything else a plan can contain
+ * — importing, exporting, de-duplicating, persisting an order — is a side effect
+ * the app carries out once, and contributes nothing to the projection.
+ *
+ * Named because two callers need the same answer: this function skips the rest,
+ * and a saved view (#49) keeps only these, since a view is a lens over the list
+ * rather than a script to re-run.
+ */
+export const DISPLAY_ACTIONS = new Set([
+  "searchBookmarks",
+  "findIncludes",
+  "findStartsWith",
+  "findWithTags",
+  "filterByRating",
+  "sortBookmarks",
+  "limitResults",
+  "limitFirst",
+  "limitLast",
+]);
+
 // PERF-08: applyAgentPlan is a pure function — given the same plan + list it always
 // returns the same reference-equal result when inputs are stable.
 export const applyAgentPlan = (plan, list) => {
@@ -153,20 +174,7 @@ export const applyAgentPlan = (plan, list) => {
   let currentResults = [...list];
   for (const step of ordered) {
     const { action, parameters = {} } = step;
-    if (
-      [
-        "importBookmarks",
-        "exportBookmarks",
-        "resetSearch",
-        "showAllBookmarks",
-        "removeDuplicates",
-        "reorder",
-        "reorderAscending",
-        "reorderDescending",
-        "persistSortedOrder",
-      ].includes(action)
-    )
-      continue;
+    if (!DISPLAY_ACTIONS.has(action)) continue;
     switch (action) {
       case "searchBookmarks":
         currentResults = searchBookmarks(parameters.searchTerm || "", currentResults);

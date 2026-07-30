@@ -11,6 +11,7 @@
 // can put an unknown action into `applyAgentPlan`.
 
 import { parseAgentResponse } from "../llm/parser.js";
+import { DISPLAY_ACTIONS } from "./bookmarkFilters.js";
 import { EMPTY_FILTERS, hasActiveFilters, isSortableField } from "./manualFilters.js";
 
 // Enough for the views a person actually returns to; a cap so a bug cannot grow
@@ -51,11 +52,19 @@ function sanitizeFilters(raw) {
  * `parseAgentResponse` takes text, which is exactly what this is: the plan is
  * re-serialized so an object smuggled into storage gets no shortcut past the
  * validation an LLM's answer goes through.
+ *
+ * Only the steps that shape the list survive. A view is a lens, so importing,
+ * exporting, de-duplicating and persisting an order have no business in one:
+ * applying a view sets the plan and the filters, and nothing replays a side
+ * effect. Keeping them would mean a chip that either does nothing or, worse,
+ * leaves a persistSortedOrder step lying in the plan for a later reorder to find.
  */
 function sanitizePlan(raw) {
   if (!Array.isArray(raw) || raw.length === 0) return [];
   try {
-    return parseAgentResponse(JSON.stringify(raw));
+    return parseAgentResponse(JSON.stringify(raw)).filter((step) =>
+      DISPLAY_ACTIONS.has(step.action)
+    );
   } catch {
     return [];
   }
@@ -111,8 +120,10 @@ export const serializeViews = (views) => JSON.stringify(views ?? []);
  * Whether what is on screen is worth saving. A view that restores nothing is a
  * chip that does nothing.
  */
-export const isViewWorthSaving = (plan, filters) =>
-  (Array.isArray(plan) ? plan.length > 0 : Boolean(plan)) || hasActiveFilters(filters);
+export const isViewWorthSaving = (plan, filters) => {
+  const steps = Array.isArray(plan) ? plan : plan ? [plan] : [];
+  return steps.some((step) => DISPLAY_ACTIONS.has(step?.action)) || hasActiveFilters(filters);
+};
 
 /**
  * A view of the current screen, sanitized on the way in as well as out — the app

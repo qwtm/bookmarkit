@@ -30,6 +30,32 @@ describe("saved views (#49)", () => {
     expect(makeView("Tagged ml", plan, EMPTY_FILTERS)).not.toBeNull();
   });
 
+  // A view is a lens over the list. Applying one sets the plan and the filters and
+  // replays nothing, so a plan of side effects would be a chip that does nothing.
+  it("keeps only the steps that shape what is shown", () => {
+    const view = makeView(
+      "Mixed",
+      [
+        { action: "removeDuplicates", parameters: {} },
+        ...plan,
+        { action: "persistSortedOrder", parameters: { sortBy: "title", order: "asc" } },
+      ],
+      EMPTY_FILTERS
+    );
+
+    expect(view.plan).toEqual(plan);
+  });
+
+  it("refuses a view whose plan was nothing but side effects", () => {
+    expect(
+      makeView("Housekeeping", [{ action: "removeDuplicates", parameters: {} }], EMPTY_FILTERS)
+    ).toBeNull();
+    expect(isViewWorthSaving([{ action: "help", parameters: {} }], EMPTY_FILTERS)).toBe(false);
+    expect(isViewWorthSaving([{ action: "exportBookmarks", parameters: {} }], { ...filters })).toBe(
+      true
+    );
+  });
+
   it("refuses a view that would restore nothing", () => {
     expect(makeView("Empty", null, EMPTY_FILTERS)).toBeNull();
     expect(makeView("", plan, filters)).toBeNull();
