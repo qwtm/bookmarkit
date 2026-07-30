@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { orphanMetaKeys } from "./localCompositeStore.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { installFakeChromeBookmarks } from "../test/fakeChromeBookmarks.js";
+import { createLocalCompositeStore, orphanMetaKeys } from "./localCompositeStore.js";
 
 describe("orphanMetaKeys (#16)", () => {
   it("returns bm_meta keys whose bookmark id is no longer valid", () => {
@@ -21,5 +22,32 @@ describe("orphanMetaKeys (#16)", () => {
   it("tolerates null/empty keys", () => {
     expect(orphanMetaKeys([null, undefined, ""], new Set())).toEqual([]);
     expect(orphanMetaKeys(null, new Set())).toEqual([]);
+  });
+});
+
+describe("teardown (#19)", () => {
+  let fake;
+
+  beforeEach(() => {
+    fake = installFakeChromeBookmarks();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    delete globalThis.chrome;
+  });
+
+  it("releases the underlying chrome listeners and the pending debounced notify", async () => {
+    const store = createLocalCompositeStore();
+    await store.init();
+    const seen = [];
+    store.subscribe((all) => seen.push(all));
+
+    store.teardown();
+    // Longer than the 50ms notify debounce that init() scheduled.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(seen).toEqual([]);
+    expect(fake.listenerCount).toBe(0);
   });
 });

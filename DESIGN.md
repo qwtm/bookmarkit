@@ -56,8 +56,10 @@ bookmark-store contract:
 | `firebaseStore.js`        | Optional Firestore store under `artifacts/<appId>/users/<uid>/bookmarks`.                                                                                  |
 
 Every implementation supports initialization, listing/subscription, single and
-bulk writes, deletion, and order persistence. New UI paths should depend on
-that behavior through `useBookmarkStore`, not detect or call a backend directly.
+bulk writes, deletion, order persistence, and `teardown()` — which must release
+every backend listener `init()` registered, because a store instance is created
+per mount rather than shared. New UI paths should depend on that behavior
+through `useBookmarkStore`, not detect or call a backend directly.
 
 ## LLM boundary
 

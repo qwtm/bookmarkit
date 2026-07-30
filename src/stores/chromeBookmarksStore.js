@@ -172,6 +172,14 @@ export function createChromeBookmarksStore() {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
+    // #19: Drop the chrome.bookmarks event listeners this store registered.
+    // Without it a re-init (StrictMode double-mount, store switch) leaves the
+    // previous listeners attached and firing into a discarded store.
+    teardown() {
+      unsubscribeFns.forEach((unsubscribe) => unsubscribe());
+      unsubscribeFns = [];
+      listeners.clear();
+    },
     async create(bookmark) {
       let parentId = await ensureFolderPath(
         typeof bookmark.folderId === "string" ? bookmark.folderId : ""
