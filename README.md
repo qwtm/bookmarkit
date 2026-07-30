@@ -20,14 +20,16 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
     to it from a chip
 - Natural language search (AI agent)
   - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”
-  - Persist sorted order across all bookmarks (e.g., “reorder descending by title”)
+  - Persist sorted order across all bookmarks (e.g., “reorder descending by title”). A saved order
+    is applied within each folder, since a bookmark’s position only exists among its siblings.
 - Import/Export
   - JSON array of bookmarks
   - Netscape Bookmark HTML (compatible with browsers’ export files)
 - Bookmark management
   - Add, edit, delete, tag, folder, rating, favicon support
   - Multi‑select (Cmd/Ctrl+Click), open in new tab (Shift+Click)
-  - Detect and remove duplicates (by title + URL)
+  - Detect and remove duplicates by the page they point at, with an optional
+    second opinion from your LLM on the same article saved under two URLs
   - Bulk edit a multi-selection: add or remove tags, move to a folder, set or
     clear ratings
   - Undo the last ten changes with Cmd/Ctrl+Z — edits, adds, deletes, imports,
@@ -118,10 +120,26 @@ The extension ships two surfaces from one build:
 | Toolbar popup | `popup.html` | Quick-add for the current tab: prefilled title/URL, tags, rating, folder. Detects an already-saved URL and edits it instead of duplicating. |
 | Full app      | `index.html` | The complete manager (search, agent, import/export, options). Opened from the popup's "Open full app".                                      |
 
+### Getting there without opening it
+
+- **Address bar.** Type `bm` then a space, then anything: every word has to appear in a saved
+  bookmark's title or address, so typing more narrows the list. Enter opens the highlighted match, or
+  the best match if you never picked one. Matching happens locally against what you have saved — no
+  network call and no model, because an address bar that waits feels broken. Tags and ratings live in
+  Bookmarkit's own metadata rather than Chrome's tree, so they are not searched here; use the full
+  app's search for those.
+- **Right-click.** "Bookmark with bookmarkit" on a page saves the page. On a link it saves the
+  **link**, with the link text as the title — quick-add opens in its own small window because a link
+  is not the tab you are on.
+- **Keyboard.** `Alt+Shift+B` opens quick-add for the current page. Chrome reserves `Ctrl+Shift+B` /
+  `⌘+Shift+B` for its own bookmarks bar and silently drops an extension that asks for them, which is
+  why the default is `Alt`. Rebind it at `chrome://extensions/shortcuts`.
+
 Permissions requested (`public/manifest.json`):
 
 - `bookmarks` — the default store keeps title/URL in the real Chrome bookmark tree.
 - `storage` — settings, themes, and the per-bookmark metadata layer.
+- `contextMenus` — the right-click entry point above.
 - `<all_urls>` — lets the background service worker run URL reachability checks from a privileged
   context (bypassing page CORS), and lets the popup read the active tab's title/URL. Requests are
   restricted to public http(s) hosts; private, loopback, and link-local addresses are blocked, and
@@ -239,6 +257,10 @@ Bookmark JSON shape (id is optional on import):
     folder paths, so exporting and re-importing keeps your folder structure
   - Tags and rating travel in `TAGS` and `RATING` attributes. Other browsers
     ignore `RATING`; Firefox understands `TAGS`
+- Imported folders are created in your real bookmark tree, so `chrome://bookmarks` and your synced
+  devices see the same structure Bookmarkit shows
+- Replacing all bookmarks writes the new set before removing the old one. If any bookmark cannot be
+  written, nothing is replaced and your existing collection is left as it was.
 
 ## Natural language commands (examples)
 
@@ -260,6 +282,15 @@ they are titled: `http` and `https`, `www.` and bare, a trailing slash, and
 tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, and similar) are all
 ignored. Path, remaining query, and fragment still distinguish pages. When
 copies differ, the one carrying tags, a rating, or a description is the one kept.
+
+If an LLM provider is configured, “Remove Duplicates” then takes a second look at
+the pairs no rule can settle — the same article under a canonical and a
+syndicated URL, or a paginated page and its print view. Those proposals appear in
+the same confirmation dialog with the reason for each pair spelled out, so nothing
+is deleted before you have read why it was suggested. Without a usable provider —
+no API key entered, or an encrypted key you have not unlocked this session — the
+rule-based pass is all that runs and nothing leaves your machine, exactly as
+before.
 
 ## Keyboard shortcuts
 
