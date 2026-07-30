@@ -162,6 +162,43 @@ describe("findWithTags", () => {
 
 // #46: the step the app writes when a vector search found things substring
 // matching could not.
+// #46: a widened search is still that search, so a new one has to displace it.
+describe("mergeAgentPlan with a widened search (#46)", () => {
+  const semantic = {
+    action: "semanticMatches",
+    parameters: { searchTerm: "pinecone", ids: ["3"] },
+  };
+
+  it("replaces a semantic search with the next plain search", () => {
+    const merged = mergeAgentPlan(
+      [semantic],
+      [{ action: "searchBookmarks", parameters: { searchTerm: "sourdough" } }]
+    );
+
+    expect(merged).toEqual([
+      { action: "searchBookmarks", parameters: { searchTerm: "sourdough" } },
+    ]);
+  });
+
+  it("replaces a plain search with the widened one that answered it", () => {
+    const merged = mergeAgentPlan(
+      [{ action: "searchBookmarks", parameters: { searchTerm: "pinecone" } }],
+      [semantic]
+    );
+
+    expect(merged).toEqual([semantic]);
+  });
+
+  it("leaves the other steps where they were", () => {
+    const merged = mergeAgentPlan(
+      [{ action: "filterByRating", parameters: { minRating: 4 } }, semantic],
+      [{ action: "searchBookmarks", parameters: { searchTerm: "sourdough" } }]
+    );
+
+    expect(merged.map((step) => step.action)).toEqual(["filterByRating", "searchBookmarks"]);
+  });
+});
+
 describe("applyAgentPlan with semanticMatches (#46)", () => {
   const list = [
     { id: "1", title: "Pinecone basics", url: "https://a.test", tags: [] },

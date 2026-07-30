@@ -80,7 +80,7 @@ export function cosine(a, b) {
  * comparison.
  *
  * @param {string|object} raw
- * @returns {Record<string, {hash: string, vector: number[]}>}
+ * @returns {Record<string, {hash: string, source: string, vector: number[]}>}
  */
 export function readIndex(raw) {
   const parsed = typeof raw === "string" ? tryParse(raw) : raw;
@@ -91,7 +91,9 @@ export function readIndex(raw) {
     if (!id || typeof entry?.hash !== "string") continue;
     if (!Array.isArray(vector) || vector.length === 0) continue;
     if (!vector.every((value) => typeof value === "number" && Number.isFinite(value))) continue;
-    clean[id] = { hash: entry.hash, vector };
+    // A vector from before the index recorded its origin has no known source, so
+    // it reads as one nothing matches and gets re-embedded.
+    clean[id] = { hash: entry.hash, source: String(entry.source ?? ""), vector };
   }
   return clean;
 }
@@ -105,17 +107,24 @@ function tryParse(raw) {
 }
 
 /**
- * The bookmarks whose vector is missing or out of date.
+ * The bookmarks whose vector is missing, out of date, or from somewhere else.
+ *
+ * `source` is what produced the vectors being compared against — provider, model,
+ * endpoint. Vectors from two models are not comparable, so a change of provider
+ * makes every stored vector stale rather than silently ranking one space against
+ * another.
  *
  * @param {object[]} bookmarks
- * @param {Record<string, {hash: string}>} index
+ * @param {Record<string, {hash: string, source?: string}>} index
+ * @param {string} [source]
  * @returns {object[]}
  */
-export const staleBookmarks = (bookmarks = [], index = {}) =>
+export const staleBookmarks = (bookmarks = [], index = {}, source = "") =>
   bookmarks.filter((bookmark) => {
     const text = embeddingText(bookmark);
     if (!bookmark?.id || !text) return false;
-    return index[bookmark.id]?.hash !== contentHash(text);
+    const entry = index[bookmark.id];
+    return entry?.hash !== contentHash(text) || (entry?.source ?? "") !== source;
   });
 
 /**
@@ -126,8 +135,9 @@ export const staleBookmarks = (bookmarks = [], index = {}) =>
  */
 export function updateIndex(index = {}, entries = [], liveIds) {
   const next = { ...index };
-  for (const { id, hash, vector } of entries) {
-    if (id && hash && Array.isArray(vector) && vector.length > 0) next[id] = { hash, vector };
+  for (const { id, hash, source = "", vector } of entries) {
+    if (id && hash && Array.isArray(vector) && vector.length > 0)
+      next[id] = { hash, source, vector };
   }
   if (!liveIds) return next;
   return Object.fromEntries(Object.entries(next).filter(([id]) => liveIds.has(id)));
@@ -138,16 +148,20 @@ export function updateIndex(index = {}, entries = [], liveIds) {
  *
  * @param {number[]} queryVector
  * @param {object[]} bookmarks
- * @param {Record<string, {vector: number[]}>} index
- * @param {{minSimilarity?: number, limit?: number}} [options]
+ * @param {Record<string, {vector: number[], source?: string}>} index
+ * @param {{minSimilarity?: number, limit?: number, source?: string}} [options]
+ *   `source` skips vectors from a different provider or model, which a failed
+ *   re-embedding can leave behind: comparing across spaces is not a weaker answer
+ *   but a meaningless one.
  * @returns {string[]} Matching ids, most similar first.
  */
 export function rankBySimilarity(queryVector, bookmarks = [], index = {}, options = {}) {
-  const { minSimilarity = MIN_SIMILARITY, limit = MAX_SEMANTIC_HITS } = options;
+  const { minSimilarity = MIN_SIMILARITY, limit = MAX_SEMANTIC_HITS, source } = options;
   const scored = [];
   for (const bookmark of bookmarks) {
     const entry = index[bookmark?.id];
     if (!entry) continue;
+    if (source !== undefined && (entry.source ?? "") !== source) continue;
     const score = cosine(queryVector, entry.vector);
     if (score >= minSimilarity) scored.push({ id: bookmark.id, score });
   }

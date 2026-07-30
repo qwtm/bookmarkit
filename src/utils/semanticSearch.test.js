@@ -64,9 +64,17 @@ describe("cosine", () => {
 
 describe("readIndex", () => {
   it("reads a stored index back", () => {
-    const stored = JSON.stringify({ 1: { hash: "abc", vector: [0.1, 0.2] } });
+    const stored = JSON.stringify({ 1: { hash: "abc", source: "openai|m|", vector: [0.1, 0.2] } });
 
-    expect(readIndex(stored)).toEqual({ 1: { hash: "abc", vector: [0.1, 0.2] } });
+    expect(readIndex(stored)).toEqual({
+      1: { hash: "abc", source: "openai|m|", vector: [0.1, 0.2] },
+    });
+  });
+
+  it("gives a vector with no recorded origin a source nothing matches", () => {
+    const stored = JSON.stringify({ 1: { hash: "abc", vector: [0.1] } });
+
+    expect(readIndex(stored)[1].source).toBe("");
   });
 
   // Storage is hand-editable and outlives versions, so anything odd is dropped
@@ -173,5 +181,35 @@ describe("mergeSemanticMatches", () => {
 
   it("ignores a ranked id that is no longer in the list", () => {
     expect(mergeSemanticMatches([], all, ["gone"])).toEqual([]);
+  });
+});
+
+// A model's vectors only mean anything against vectors from the same model, so the
+// index has to know which one it holds.
+describe("vectors remember where they came from (#46)", () => {
+  const bookmarks = [{ id: "1", title: "Pinecone basics", tags: [] }];
+  const hash = contentHash(embeddingText(bookmarks[0]));
+
+  it("re-embeds everything when the provider or model changed", () => {
+    const index = { 1: { hash, source: "openai|text-embedding-3-small|", vector: [1, 0] } };
+
+    expect(staleBookmarks(bookmarks, index, "gemini|text-embedding-004|")).toHaveLength(1);
+    expect(staleBookmarks(bookmarks, index, "openai|text-embedding-3-small|")).toHaveLength(0);
+  });
+
+  it("keeps the source it was embedded with", () => {
+    const next = updateIndex({}, [{ id: "1", hash, source: "ollama|nomic|", vector: [1, 0] }]);
+
+    expect(next[1].source).toBe("ollama|nomic|");
+  });
+
+  it("ignores vectors from another space when ranking", () => {
+    const index = {
+      1: { hash, source: "old|model|", vector: [1, 0] },
+      2: { hash, source: "new|model|", vector: [1, 0] },
+    };
+    const list = [bookmarks[0], { id: "2", title: "Vector databases", tags: [] }];
+
+    expect(rankBySimilarity([1, 0], list, index, { source: "new|model|" })).toEqual(["2"]);
   });
 });

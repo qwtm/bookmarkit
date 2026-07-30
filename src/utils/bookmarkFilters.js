@@ -111,6 +111,15 @@ export const sortStepsByPriority = (steps = []) => {
     .map((x) => x.s);
 };
 
+/**
+ * The slot a step occupies in an accumulated plan.
+ *
+ * #46's `semanticMatches` is a `searchBookmarks` the app widened, so it has to
+ * compete for the same slot: otherwise searching "pinecone" and then "sourdough"
+ * leaves both in the plan and the view narrows to nothing.
+ */
+const slotOf = (action) => (action === "semanticMatches" ? "searchBookmarks" : action);
+
 // #20: Merge a newly parsed plan into the accumulated one. New steps replace any
 // prior step with the same action (so re-searching a different term does not
 // stack on top of the old filter), while steps of a different action still
@@ -124,14 +133,15 @@ export const mergeAgentPlan = (previous = [], steps = []) => {
   // genuinely new actions are appended. Each action ends up exactly once —
   // extra duplicate slots in `previous` and repeated incoming actions are
   // collapsed, keeping the one-step-per-action bound (Codex #32).
-  const replacement = new Map(steps.map((s) => [s.action, s])); // last wins per action
+  const replacement = new Map(steps.map((s) => [slotOf(s.action), s])); // last wins per slot
   const placed = new Set();
   const merged = [];
   for (const s of prev) {
-    if (replacement.has(s.action)) {
-      if (!placed.has(s.action)) {
-        placed.add(s.action);
-        merged.push(replacement.get(s.action)); // first matching slot only
+    const slot = slotOf(s.action);
+    if (replacement.has(slot)) {
+      if (!placed.has(slot)) {
+        placed.add(slot);
+        merged.push(replacement.get(slot)); // first matching slot only
       }
       // drop additional stale duplicate slots for this action
     } else {
@@ -139,9 +149,10 @@ export const mergeAgentPlan = (previous = [], steps = []) => {
     }
   }
   for (const s of steps) {
-    if (!placed.has(s.action)) {
-      placed.add(s.action);
-      merged.push(replacement.get(s.action));
+    const slot = slotOf(s.action);
+    if (!placed.has(slot)) {
+      placed.add(slot);
+      merged.push(replacement.get(slot));
     }
   }
   return merged;

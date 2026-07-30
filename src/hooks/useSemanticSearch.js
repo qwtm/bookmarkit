@@ -11,7 +11,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
-import { embedTexts, supportsEmbeddings } from "../llm/embeddings.js";
+import { embedTexts, embeddingSource, supportsEmbeddings } from "../llm/embeddings.js";
 import { isProviderReady } from "../llm/index.js";
 import { readSetting, writeSetting } from "../utils/extensionStorage.js";
 import {
@@ -70,11 +70,15 @@ export function useSemanticSearch({ provider, providerOptions, locked }) {
     if (!term || locked || !chosen) return [];
     if (!supportsEmbeddings(chosen) || !isProviderReady(chosen, options)) return [];
 
+    // What the stored vectors have to have come from to be comparable with the
+    // query's: change provider or embedding model and the index is re-earned.
+    const source = embeddingSource(chosen, options);
+
     try {
       if (!indexRef.current) indexRef.current = readIndex(await readSetting(INDEX_KEY));
-      await refresh(chosen, options, bookmarks, indexRef, setIndexing);
+      await refresh({ provider: chosen, options, source }, bookmarks, indexRef, setIndexing);
       const [queryVector] = await embedTexts(chosen, options, [term]);
-      return rankBySimilarity(queryVector, bookmarks, indexRef.current);
+      return rankBySimilarity(queryVector, bookmarks, indexRef.current, { source });
     } catch (error) {
       // Recall is the only casualty: the caller's substring results stand.
       console.warn("Semantic search unavailable:", error);
@@ -92,8 +96,8 @@ export function useSemanticSearch({ provider, providerOptions, locked }) {
  * still finds things — and the write happens once at the end, because the index is
  * one value in storage.
  */
-async function refresh(provider, options, bookmarks, indexRef, setIndexing) {
-  const stale = staleBookmarks(bookmarks, indexRef.current);
+async function refresh({ provider, options, source }, bookmarks, indexRef, setIndexing) {
+  const stale = staleBookmarks(bookmarks, indexRef.current, source);
   if (stale.length === 0) return;
 
   setIndexing(true);
@@ -104,7 +108,12 @@ async function refresh(provider, options, bookmarks, indexRef, setIndexing) {
       try {
         const vectors = await embedTexts(provider, options, texts);
         batch.forEach((bookmark, i) => {
-          entries.push({ id: bookmark.id, hash: contentHash(texts[i]), vector: vectors[i] });
+          entries.push({
+            id: bookmark.id,
+            hash: contentHash(texts[i]),
+            source,
+            vector: vectors[i],
+          });
         });
       } catch (error) {
         console.warn("Embedding batch failed:", error);
