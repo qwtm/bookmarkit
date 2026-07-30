@@ -13,6 +13,7 @@ const BookmarkCard = React.memo(function BookmarkCard({
   onClick,
   onDoubleClick,
   onKeyDown,
+  onDragStart,
 }) {
   const isActive = isSelected || isMultiSelected;
   const isInvalid = bookmark.urlStatus === "invalid" || bookmark.unreachable;
@@ -33,6 +34,9 @@ const BookmarkCard = React.memo(function BookmarkCard({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
+      // #55: a card is draggable only where there is somewhere to drop it.
+      draggable={Boolean(onDragStart)}
+      onDragStart={onDragStart}
     />
   );
 });

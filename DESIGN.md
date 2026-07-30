@@ -170,6 +170,43 @@ an `apply` — and hands it to `useUndoHistory`. Three consequences worth keepin
   is what `Cmd+Z` walks back through, and writes an undo makes are not recorded,
   so undo never turns into redo. A destructive write's offer does not expire.
 
+## Folders
+
+There is no folder anywhere in this app. `folderId` is a path string on a bookmark,
+in every store, so `utils/folderTree.js` derives the tree the collection implies
+and expresses every folder operation as a write across the bookmarks that carry the
+path: renaming replaces a prefix, renesting is the same replacement with a longer
+one, and removing a folder rewrites its contents to its parent.
+
+Three consequences that shape the code:
+
+- **Folder editing has no write path of its own.** Everything returns patches for
+  `applyBulkEdit` (#54), so a thirty-bookmark drag is one store write, one
+  `updatedAt` sweep, and one undo entry — and the Chrome store's real nested
+  folders are built by the same `folderId` handling that already existed.
+- **Nothing can delete a folder's contents.** Removal is defined as emptying
+  upwards, because a folder with nothing in it has already stopped existing, and a
+  gesture as easy to misfire as a drag must not be able to lose bookmarks.
+- **Selecting a folder is a manual filter,** not a mode: `filters.folder` alongside
+  the tag and rating criteria in `utils/manualFilters.js`. It composes with the
+  rest for free and a saved view can hold it, where a separate "current folder"
+  would have needed its own interaction with each.
+
+Paths compare case-insensitively, matching the organizer's folder cleaning (#44):
+one folder shown twice would split its count and filter as its own sibling.
+
+Two things follow from the filter being ordinary state rather than the tree's own:
+a rename has to carry the filter with it (`followFolderMove`), or the view would
+filter on a path no bookmark has any more, and selecting a folder clears the
+multi-selection. The pane is marked as keeping the selection so the selected set can
+be dragged into a folder, which makes filtering from it the one gesture that has to
+drop it — a selection the new filter hides is a bulk edit aimed at bookmarks nobody
+can see.
+
+`FolderTree.jsx` holds only what a tree needs to be operated — what is collapsed,
+what is being renamed, what a drop is carrying — and hands paths and ids outward.
+It knows nothing about stores, patches or undo.
+
 ## Semantic search
 
 Search is three layers, and the order matters. `searchBookmarks` in

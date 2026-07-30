@@ -225,3 +225,31 @@ describe("brokenOnly (#47)", () => {
     expect(hasActiveFilters({ ...EMPTY_FILTERS, brokenOnly: true })).toBe(true);
   });
 });
+
+// #55: clicking a folder in the tree is a manual filter, so it combines with the
+// others and a saved view can hold it.
+describe("filtering by folder (#55)", () => {
+  const filed = [
+    { id: "1", title: "One", url: "https://one.test", tags: [], folderId: "Work" },
+    { id: "2", title: "Two", url: "https://two.test", tags: [], folderId: "Work/Project A" },
+    { id: "3", title: "Three", url: "https://three.test", tags: [], folderId: "Personal" },
+    { id: "4", title: "Four", url: "https://four.test", tags: [] },
+  ];
+
+  it("narrows to a folder and everything under it", () => {
+    const result = applyManualFilters({ ...EMPTY_FILTERS, folder: "Work" }, filed);
+
+    expect(result.map((b) => b.id)).toEqual(["1", "2"]);
+  });
+
+  it("is not an active filter until a folder is chosen", () => {
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, folder: "" })).toBe(false);
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, folder: "Work" })).toBe(true);
+  });
+
+  it("layers on the other filters rather than replacing them", () => {
+    const result = applyManualFilters({ ...EMPTY_FILTERS, folder: "Work", text: "two" }, filed);
+
+    expect(result.map((b) => b.id)).toEqual(["2"]);
+  });
+});

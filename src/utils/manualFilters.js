@@ -11,6 +11,7 @@ import {
   normalizeTag,
 } from "./bookmarkFilters.js";
 import { findBrokenLinks } from "./linkHealth.js";
+import { findInFolder } from "./folderTree.js";
 
 export const EMPTY_FILTERS = Object.freeze({
   text: "",
@@ -19,6 +20,10 @@ export const EMPTY_FILTERS = Object.freeze({
   minRating: 0,
   // #47: only the links the last check could not reach.
   brokenOnly: false,
+  // #55: a folder path, `UNFILED`, or "" for the whole collection. Clicking a
+  // folder in the tree is a manual filter like any other, which is what makes it
+  // combinable with the rest and savable as a view.
+  folder: "",
   sortBy: "",
   order: "asc",
 });
@@ -70,6 +75,7 @@ export function hasActiveFilters(filters) {
     filters.excludeTags?.length ||
     filters.minRating > 0 ||
     filters.brokenOnly ||
+    filters.folder ||
     filters.sortBy
   );
 }
@@ -100,29 +106,34 @@ export function deriveTagCounts(list = []) {
 }
 
 /**
+ * One narrowing each, applied in this order. A filter that is not set passes the
+ * list through, so adding a criterion is adding an entry here rather than another
+ * branch in the middle of the pipeline.
+ */
+const NARROWERS = [
+  (filters, list) => {
+    const text = (filters.text || "").trim();
+    return text ? searchBookmarks(text, list) : list;
+  },
+  (filters, list) =>
+    filters.includeTags?.length || filters.excludeTags?.length
+      ? findWithTags(filters.includeTags || [], filters.excludeTags || [], list)
+      : list,
+  (filters, list) =>
+    filters.minRating > 0
+      ? filterByRating({ minRating: filters.minRating, comparator: "gte" }, list)
+      : list,
+  (filters, list) => (filters.brokenOnly ? findBrokenLinks(list) : list),
+  (filters, list) => (filters.folder ? findInFolder(filters.folder, list) : list),
+];
+
+/**
  * Apply manual filters on top of an already agent-planned list.
  * Sort runs last so an explicit manual sort wins over any sort the agent applied.
  */
 export function applyManualFilters(filters, list = []) {
   if (!filters) return list;
   let result = list;
-
-  const text = (filters.text || "").trim();
-  if (text) result = searchBookmarks(text, result);
-
-  if (filters.includeTags?.length || filters.excludeTags?.length) {
-    result = findWithTags(filters.includeTags || [], filters.excludeTags || [], result);
-  }
-
-  if (filters.minRating > 0) {
-    result = filterByRating({ minRating: filters.minRating, comparator: "gte" }, result);
-  }
-
-  if (filters.brokenOnly) result = findBrokenLinks(result);
-
-  if (filters.sortBy) {
-    result = sortBookmarks(filters.sortBy, filters.order || "asc", result);
-  }
-
-  return result;
+  for (const narrow of NARROWERS) result = narrow(filters, result);
+  return filters.sortBy ? sortBookmarks(filters.sortBy, filters.order || "asc", result) : result;
 }

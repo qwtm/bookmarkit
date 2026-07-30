@@ -160,6 +160,7 @@ function BookmarkRow({ index, style, data }) {
     onBookmarkClick,
     onBookmarkDoubleClick,
     onBookmarkKeyDown,
+    onBookmarkDragStart,
     onRowHeightChange,
     remoteFavicons,
   } = data;
@@ -188,6 +189,7 @@ function BookmarkRow({ index, style, data }) {
           onClick={(e) => onBookmarkClick(bookmark, e)}
           onDoubleClick={() => onBookmarkDoubleClick(bookmark)}
           onKeyDown={(e) => onBookmarkKeyDown(e, bookmark)}
+          onDragStart={onBookmarkDragStart && ((e) => onBookmarkDragStart(e, bookmark))}
         />
       </div>
     </div>
@@ -232,6 +234,7 @@ const BookmarkList = React.memo(function BookmarkList({
   onBookmarkClick,
   onBookmarkDoubleClick,
   onBookmarkKeyDown,
+  onBookmarkDragStart,
   // empty state props
   isLoading,
   bookmarksTotal,
@@ -295,6 +298,7 @@ const BookmarkList = React.memo(function BookmarkList({
       onBookmarkClick,
       onBookmarkDoubleClick,
       onBookmarkKeyDown,
+      onBookmarkDragStart,
       filters,
       tagFacets,
       onFilterChange,
@@ -313,6 +317,7 @@ const BookmarkList = React.memo(function BookmarkList({
       onBookmarkClick,
       onBookmarkDoubleClick,
       onBookmarkKeyDown,
+      onBookmarkDragStart,
       filters,
       tagFacets,
       onFilterChange,
