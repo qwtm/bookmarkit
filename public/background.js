@@ -79,8 +79,12 @@ async function readCapped(response, cap) {
     while (read < cap) {
       const { done, value } = await reader.read();
       if (done) break;
-      read += value.byteLength;
-      text += decoder.decode(value, { stream: true });
+      // One chunk can be larger than what is left of the allowance, so the cap is
+      // enforced on the bytes taken, not on the bytes asked for.
+      const remaining = cap - read;
+      const chunk = value.byteLength > remaining ? value.subarray(0, remaining) : value;
+      read += chunk.byteLength;
+      text += decoder.decode(chunk, { stream: true });
     }
   } finally {
     reader.cancel().catch(() => {});
