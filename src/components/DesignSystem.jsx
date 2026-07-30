@@ -161,23 +161,49 @@ export const Select = React.forwardRef(function Select(
   );
 });
 
+// #24: Ratings are 0–5 integers, but stored data is not guaranteed to be one.
+const clampRating = (value) => Math.min(5, Math.max(0, Math.round(Number(value)) || 0));
+
 export function StarRating({
   value = 0,
   onChange,
   readOnly = false,
   size = 24,
-  onStarKeyDown,
-  idPrefix,
   buttonSemantics = false,
 }) {
+  const starRefs = React.useRef([]);
+  // #24: A rating can reach here as a string — a JSON import writes through what
+  // the file said. Every comparison below has to agree with the fill, or the
+  // control renders as rated with nothing checked and so has no tab stop at all.
+  const rating = clampRating(value);
+  // A radiogroup is one tab stop, so focus moves with the arrow keys instead of
+  // Tab. A group of toggle buttons keeps its five natural tab stops.
+  const isRadioGroup = !readOnly && !buttonSemantics;
+  const focusedStar = rating === 0 ? 1 : rating;
+
+  const select = (star) => {
+    onChange?.(star);
+    starRefs.current[(star === 0 ? 1 : star) - 1]?.focus();
+  };
+
+  const handleKeyDown = (event) => {
+    const step = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    // Stepping below one star clears the rating, which the pointer can already
+    // do by re-activating the selected star.
+    select(clampRating(rating + step));
+  };
+
   return (
     <div
       className="ds-star-rating"
       role={readOnly ? "img" : buttonSemantics ? "group" : "radiogroup"}
-      aria-label={`Rating: ${value} of 5`}
+      aria-label={`Rating: ${rating} of 5`}
+      onKeyDown={isRadioGroup ? handleKeyDown : undefined}
     >
       {[1, 2, 3, 4, 5].map((star) => {
-        const filled = star <= value;
+        const filled = star <= rating;
         const icon = (
           <svg
             width={size}
@@ -199,15 +225,18 @@ export function StarRating({
         return (
           <button
             key={star}
-            id={idPrefix ? `${idPrefix}-${star}` : undefined}
+            ref={(node) => {
+              starRefs.current[star - 1] = node;
+            }}
             type="button"
             role={buttonSemantics ? undefined : "radio"}
-            aria-checked={buttonSemantics ? undefined : filled}
+            // Exactly one radio is checked, even though the fill is cumulative.
+            aria-checked={buttonSemantics ? undefined : star === rating}
             aria-pressed={buttonSemantics ? filled : undefined}
-            aria-label={`${star} star${star === 1 ? "" : "s"}${value === star ? " (selected — activate to clear)" : ""}`}
+            aria-label={`${star} star${star === 1 ? "" : "s"}${rating === star ? " (selected — activate to clear)" : ""}`}
             className={filled ? "is-filled" : ""}
-            onClick={() => onChange?.(value === star ? 0 : star)}
-            onKeyDown={(event) => onStarKeyDown?.(event, star)}
+            tabIndex={isRadioGroup && star !== focusedStar ? -1 : undefined}
+            onClick={() => onChange?.(rating === star ? 0 : star)}
           >
             {icon}
           </button>

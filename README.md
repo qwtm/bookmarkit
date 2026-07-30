@@ -223,6 +223,10 @@ Bookmark JSON shape (id is optional on import):
   - Compatible with exports from Chrome/Firefox/etc.
   - You can upload the file or paste its contents
   - Export creates a standard bookmark HTML with fields like ADD_DATE, LAST_MODIFIED, ICON, DESCRIPTION
+  - Folders are written as nested `H3` sections and read back as slash-separated
+    folder paths, so exporting and re-importing keeps your folder structure
+  - Tags and rating travel in `TAGS` and `RATING` attributes. Other browsers
+    ignore `RATING`; Firefox understands `TAGS`
 
 ## Natural language commands (examples)
 

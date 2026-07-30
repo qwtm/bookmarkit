@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { escapeHtml } from "../utils/url.js";
+import { generateNetscapeHtml, parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { Button, Tabs, Textarea } from "./DesignSystem.jsx";
 
 // UX-03: Memoize JSON/HTML export strings and data URIs to prevent recomputing on every render.
@@ -18,28 +18,7 @@ const ImportExportContent = ({ bookmarks, onClose, onImportJson, onImportHtml, s
   // UX-03: Memoize expensive serializations so they run at most once per bookmarks change
   const jsonExport = useMemo(() => JSON.stringify(bookmarks, null, 2), [bookmarks]);
 
-  const generateHtmlExport = (bms) => {
-    let html = "<!DOCTYPE NETSCAPE-Bookmark-file-1>\n";
-    html += "<!-- This is an automatically generated file. -->\n";
-    html += "<!-- DO NOT EDIT! -->\n";
-    html += '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n';
-    html += "<TITLE>Bookmarks</TITLE>\n";
-    html += "<H1>Bookmarks</H1>\n";
-    html += "<DL><p>\n";
-    bms.forEach((b) => {
-      const addDate = b.createdAt ? Math.floor(new Date(b.createdAt).getTime() / 1000) : "";
-      const lastModified = b.updatedAt ? Math.floor(new Date(b.updatedAt).getTime() / 1000) : "";
-      // #12: escape all interpolated fields so a bookmark containing " < > & cannot
-      // corrupt the export file or inject markup into the generated HTML.
-      const icon = b.faviconUrl ? ` ICON="${escapeHtml(b.faviconUrl)}"` : "";
-      const description = b.description ? ` DESCRIPTION="${escapeHtml(b.description)}"` : "";
-      html += `    <DT><A HREF="${escapeHtml(b.url)}" ADD_DATE="${addDate}" LAST_MODIFIED="${lastModified}"${icon}${description}>${escapeHtml(b.title)}</A>\n`;
-    });
-    html += "</DL><p>\n";
-    return html;
-  };
-
-  const htmlExport = useMemo(() => generateHtmlExport(bookmarks), [bookmarks]);
+  const htmlExport = useMemo(() => generateNetscapeHtml(bookmarks), [bookmarks]);
   // UX-03: Memoize data URIs for download links
   const jsonDataUri = useMemo(
     () => `data:application/json;charset=utf-8,${encodeURIComponent(jsonExport)}`,
@@ -71,9 +50,12 @@ const ImportExportContent = ({ bookmarks, onClose, onImportJson, onImportHtml, s
   };
 
   const requestHtmlImport = () => {
-    // Count approximate bookmark entries in HTML (DT elements)
-    const count = (importHtmlText.match(/<DT>/gi) || []).length;
-    setPendingImport({ type: "html", data: importHtmlText, count });
+    // Counted by parsing rather than by matching <DT>, which also introduces folders.
+    setPendingImport({
+      type: "html",
+      data: importHtmlText,
+      count: parseNetscapeHtml(importHtmlText).length,
+    });
   };
 
   // UX-04: Execute confirmed import
@@ -310,8 +292,12 @@ const ImportExportContent = ({ bookmarks, onClose, onImportJson, onImportHtml, s
                   if (file) {
                     const reader = new FileReader();
                     reader.onload = async (event) => {
-                      const count = (event.target.result.match(/<DT>/gi) || []).length;
-                      setPendingImport({ type: "html", data: event.target.result, count });
+                      const html = event.target.result;
+                      setPendingImport({
+                        type: "html",
+                        data: html,
+                        count: parseNetscapeHtml(html).length,
+                      });
                     };
                     reader.readAsText(file);
                   }

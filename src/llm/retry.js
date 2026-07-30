@@ -54,8 +54,10 @@ export async function fetchWithRetry(url, options = {}, retryConfig = {}, caller
       res = await fetch(url, { ...options, signal: timeoutController.signal });
     } catch (err) {
       lastError = err;
-      // AbortError means timeout or caller cancel — do not retry
-      if (err.name === "AbortError") throw err;
+      // #41: fetch rejects with the reason we passed to abort(), so a per-attempt
+      // timeout arrives as TimeoutError and a caller cancel as AbortError. Both
+      // are deliberate stops, not transport failures — never retry either.
+      if (err.name === "AbortError" || err.name === "TimeoutError") throw err;
       // Network error — retry if attempts remain
       if (attempt < maxAttempts) {
         await _delay(_jitteredBackoff(baseDelayMs, attempt));

@@ -13,6 +13,7 @@ import {
 } from "../utils/manualFilters.js";
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
 import { isSafeHttpUrl } from "../utils/url.js";
+import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { encryptString, decryptString, isEncryptedBlob } from "../utils/keyCrypto.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useTheme } from "../hooks/useTheme.js";
@@ -883,28 +884,7 @@ const BookmarkApp = () => {
   const handleImportHtml = useCallback(
     async (html, replaceAll = false) => {
       try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, "text/html");
-        const links = doc.querySelectorAll("a[href]");
-        const importedBookmarks = Array.from(links).map((link) => {
-          let folderId = "imported";
-          const parentH3 = link.closest("dl")?.previousElementSibling;
-          if (parentH3?.tagName === "H3")
-            folderId = parentH3.textContent.trim().toLowerCase().replace(/\s+/g, "-");
-          return {
-            title: link.textContent.trim() || link.href,
-            url: link.href,
-            description: link.getAttribute("description") || "",
-            tags: [],
-            rating: 0,
-            folderId,
-            faviconUrl: link.getAttribute("icon") || "",
-            createdAt: link.getAttribute("add_date")
-              ? new Date(parseInt(link.getAttribute("add_date")) * 1000).toISOString()
-              : new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-          };
-        });
+        const importedBookmarks = parseNetscapeHtml(html);
 
         // #11: only import links with a safe http(s) URL.
         const safeBookmarks = importedBookmarks.filter((b) => isSafeHttpUrl(b.url));
