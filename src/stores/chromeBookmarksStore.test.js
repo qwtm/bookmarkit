@@ -205,6 +205,48 @@ describe("chromeBookmarksStore bulk writes", () => {
     expect(fake.urlPaths()).toEqual(["bookmarkit/Fresh/New"]);
   });
 
+  // #43: reorder read only the root's children, so ids nested in a subfolder
+  // were filtered out and never moved — a foldered collection stayed unsorted
+  // while the UI implied the whole thing had been persisted.
+  it("sorts bookmarks inside subfolders, not just at the root", async () => {
+    await store.bulkAdd([
+      { title: "Charlie", url: "https://c.example", folderId: "Work" },
+      { title: "Alpha", url: "https://a.example", folderId: "Work" },
+      { title: "Bravo", url: "https://b.example", folderId: "Work" },
+    ]);
+    await store.persistSortedOrder({ sortBy: "title", order: "asc" });
+    expect(fake.urlPaths()).toEqual([
+      "bookmarkit/Work/Alpha",
+      "bookmarkit/Work/Bravo",
+      "bookmarkit/Work/Charlie",
+    ]);
+  });
+
+  it("sorts each folder independently, leaving subfolders where they are", async () => {
+    await store.bulkAdd([
+      { title: "Nested", url: "https://n.example", folderId: "Work" },
+      { title: "Zulu", url: "https://z.example", folderId: "" },
+      { title: "Mike", url: "https://m.example", folderId: "" },
+    ]);
+    await store.persistSortedOrder({ sortBy: "title", order: "asc" });
+    // The Work folder still comes first among the root's children.
+    expect(fake.urlPaths()).toEqual([
+      "bookmarkit/Work/Nested",
+      "bookmarkit/Mike",
+      "bookmarkit/Zulu",
+    ]);
+  });
+
+  it("puts bookmarks it was not told about after the ones it was", async () => {
+    const added = await store.bulkAdd([
+      { title: "First", url: "https://1.example", folderId: "" },
+      { title: "Second", url: "https://2.example", folderId: "" },
+      { title: "Third", url: "https://3.example", folderId: "" },
+    ]);
+    await store.reorderBookmarks([added[2].id]);
+    expect(fake.urlPaths()).toEqual(["bookmarkit/Third", "bookmarkit/First", "bookmarkit/Second"]);
+  });
+
   // #17: replace used to delete everything first, so a failure part way through
   // creation left the collection gone with nothing to restore it from.
   it("keeps the existing collection when a replacement cannot be written", async () => {

@@ -17,7 +17,8 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
 
 - Natural language search (AI agent)
   - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”
-  - Persist sorted order across all bookmarks (e.g., “reorder descending by title”)
+  - Persist sorted order across all bookmarks (e.g., “reorder descending by title”). A saved order
+    is applied within each folder, since a bookmark’s position only exists among its siblings.
 - Import/Export
   - JSON array of bookmarks
   - Netscape Bookmark HTML (compatible with browsers’ export files)
