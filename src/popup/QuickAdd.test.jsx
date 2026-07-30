@@ -166,3 +166,48 @@ describe("QuickAdd popup (#51)", () => {
     expect(chrome.tabs.create).toHaveBeenCalledWith({ url: "chrome-extension://abc/index.html" });
   });
 });
+
+// #52: A right-click opens this popup as its own window with the target in the
+// query string, because the popup cannot discover a link's address for itself —
+// the link is not the active tab.
+describe("QuickAdd opened for a given target (#52)", () => {
+  const openedFor = (search) => {
+    window.history.replaceState({}, "", `/popup.html${search}`);
+  };
+
+  afterEach(() => {
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("prefills from the query string rather than the active tab", async () => {
+    mockChrome({ title: "The page it sat on", url: "https://example.com/page" });
+    openedFor("?url=https%3A%2F%2Flinked.test%2Ftarget&title=The+link+text");
+
+    render(<QuickAdd />);
+
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("The link text"));
+    expect(screen.getByLabelText("URL")).toHaveValue("https://linked.test/target");
+    expect(chrome.tabs.query).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the address when no title came with it", async () => {
+    mockChrome({ title: "The page it sat on", url: "https://example.com/page" });
+    openedFor("?url=https%3A%2F%2Flinked.test%2Ftarget");
+
+    render(<QuickAdd />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Title")).toHaveValue("https://linked.test/target")
+    );
+  });
+
+  it("refuses a target it would not open", async () => {
+    mockChrome({ title: "The page it sat on", url: "https://example.com/page" });
+    openedFor("?url=javascript%3Aalert(1)");
+
+    render(<QuickAdd />);
+
+    await waitFor(() => expect(screen.getByText(/can't be bookmarked/)).toBeInTheDocument());
+    expect(screen.queryByLabelText("URL")).toBeNull();
+  });
+});
