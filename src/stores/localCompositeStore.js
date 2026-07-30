@@ -76,6 +76,7 @@ export function createLocalCompositeStore(options = {}) {
   const chromeStore = createChromeBookmarksStore(options);
   let listeners = new Set();
   let notifyTimer = null;
+  let unsubChromeStore = null;
 
   // PERF-03: Debounce notify to prevent cascading list() calls on rapid Chrome bookmark events
   const notify = () => {
@@ -92,7 +93,7 @@ export function createLocalCompositeStore(options = {}) {
       // Initialize underlying chrome store and subscribe to propagate updates
       await chromeStore.init?.();
       // When chrome changes, refresh and re-emit merged bookmarks
-      chromeStore.subscribe?.(() => notify());
+      unsubChromeStore = chromeStore.subscribe?.(() => notify());
       await notify();
     },
     async list() {
@@ -154,6 +155,16 @@ export function createLocalCompositeStore(options = {}) {
     subscribe(cb) {
       listeners.add(cb);
       return () => listeners.delete(cb);
+    },
+    // #19: Release the underlying chrome store plus the pending debounced
+    // notify, so a discarded store cannot emit after teardown.
+    teardown() {
+      if (notifyTimer) clearTimeout(notifyTimer);
+      notifyTimer = null;
+      unsubChromeStore?.();
+      unsubChromeStore = null;
+      listeners.clear();
+      chromeStore.teardown?.();
     },
     async create(bookmark) {
       // Create in chrome first (title/url only supported)
