@@ -199,3 +199,23 @@ describe("BookmarkForm and what the page says (#48)", () => {
     expect(generate.mock.calls[0][0]).not.toContain("Page description");
   });
 });
+
+// #55: a folder is created by spelling it, so the spellings that exist are offered.
+describe("BookmarkForm folder autocomplete (#55)", () => {
+  it("completes against the folders already in use", () => {
+    setup({ title: "One", url: "https://one.test" }, { folders: ["Personal", "Work/Project A"] });
+
+    const field = screen.getByLabelText("Folder");
+    expect(field).toHaveAttribute("list", "known-folders");
+    expect([...document.querySelectorAll("#known-folders option")].map((o) => o.value)).toEqual([
+      "Personal",
+      "Work/Project A",
+    ]);
+  });
+
+  it("offers nothing when there are no folders yet", () => {
+    setup({ title: "One", url: "https://one.test" });
+
+    expect(document.querySelectorAll("#known-folders option")).toHaveLength(0);
+  });
+});

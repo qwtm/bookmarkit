@@ -12,6 +12,7 @@
 
 import { parseAgentResponse } from "../llm/parser.js";
 import { DISPLAY_ACTIONS } from "./bookmarkFilters.js";
+import { UNFILED, normalizeFolderPath } from "./folderTree.js";
 import { EMPTY_FILTERS, hasActiveFilters, isSortableField } from "./manualFilters.js";
 
 // Enough for the views a person actually returns to; a cap so a bug cannot grow
@@ -42,6 +43,7 @@ function sanitizeFilters(raw) {
     excludeTags: asTagList(raw.excludeTags),
     minRating: asRating(raw.minRating),
     brokenOnly: raw.brokenOnly === true,
+    folder: raw.folder === UNFILED ? UNFILED : normalizeFolderPath(raw.folder),
     sortBy: isSortableField(raw.sortBy) ? raw.sortBy : "",
     order: raw.order === "desc" ? "desc" : "asc",
   };

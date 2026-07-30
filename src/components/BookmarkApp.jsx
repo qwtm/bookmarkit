@@ -9,6 +9,12 @@ import {
   hasActiveFilters,
 } from "../utils/manualFilters.js";
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
+import {
+  dissolveFolderPatches,
+  folderPaths,
+  moveToFolderPatches,
+  renameFolderPatches,
+} from "../utils/folderTree.js";
 import { isBroken } from "../utils/linkHealth.js";
 import { fetchUrlStatus } from "../utils/urlStatus.js";
 import { organizePatches } from "../utils/organizePlan.js";
@@ -38,6 +44,7 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import OptionsModal from "./OptionsModal";
 import BookmarkList from "./BookmarkList.jsx";
 import BulkEditBar from "./BulkEditBar.jsx";
+import FolderTree, { DRAG_BOOKMARKS } from "./FolderTree.jsx";
 import LinkSweepBar from "./LinkSweepBar.jsx";
 import OrganizeReviewModal from "./OrganizeReviewModal.jsx";
 import SmartViewBar from "./SmartViewBar.jsx";
@@ -117,6 +124,9 @@ const BookmarkApp = () => {
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  // #55: the folder tree, shown on request. It is a way to browse, not something
+  // the collection needs, so it does not take space until asked for.
+  const [isFolderPaneOpen, setIsFolderPaneOpen] = useState(false);
   const [bookmarksToDelete, setBookmarksToDelete] = useState([]);
   // #44: the diff a tidy-up is waiting to be reviewed through, empty when none is.
   const [proposedChanges, setProposedChanges] = useState([]);
@@ -213,6 +223,10 @@ const BookmarkApp = () => {
 
   const tagFacets = useMemo(() => deriveTagCounts(plannedBookmarks), [plannedBookmarks]);
 
+  // #55: the folders that exist, for the form to complete against — typing a path
+  // by hand is how a second "Wrok" folder gets created.
+  const knownFolders = useMemo(() => folderPaths(bookmarks), [bookmarks]);
+
   // #54: The bulk bar needs the bookmarks, not just their ids — what a change
   // would write depends on what each of them currently holds.
   const selectedBookmarks = useMemo(
@@ -286,6 +300,69 @@ const BookmarkApp = () => {
       }
     },
     [applyBulkEdit]
+  );
+
+  // #55: A folder is a path its bookmarks carry and nothing else, so every gesture
+  // in the tree — a drop, a rename, a removal — is a write across the bookmarks it
+  // holds. Going through the bulk-edit path keeps folder editing on the one write
+  // path, and makes each gesture a single undo entry however many bookmarks moved.
+  const applyFolderChange = useCallback(
+    async (patches, describe) => {
+      if (patches.length === 0) return;
+      try {
+        await applyBulkEdit(patches);
+        showCustomMessage(describe(patches.length), "success");
+      } catch (e) {
+        console.error("Folder change failed:", e);
+        showCustomMessage("Failed to move the bookmark(s). Please try again.", "error");
+      }
+    },
+    [applyBulkEdit]
+  );
+
+  const handleMoveToFolder = useCallback(
+    (ids, folder) =>
+      applyFolderChange(
+        moveToFolderPatches(bookmarks, ids, folder),
+        (count) => `Moved ${count} bookmark(s).`
+      ),
+    [applyFolderChange, bookmarks]
+  );
+
+  // Renaming and renesting are the same write: both replace a path prefix.
+  const handleRenameFolder = useCallback(
+    (from, to) =>
+      applyFolderChange(
+        renameFolderPatches(bookmarks, from, to),
+        (count) => `${count} bookmark(s) now in ${to || "no folder"}.`
+      ),
+    [applyFolderChange, bookmarks]
+  );
+
+  const handleDeleteFolder = useCallback(
+    (path) =>
+      applyFolderChange(
+        dissolveFolderPatches(bookmarks, path),
+        (count) => `Removed ${path} and moved ${count} bookmark(s) out of it.`
+      ),
+    [applyFolderChange, bookmarks]
+  );
+
+  const selectFolder = useCallback((folder) => {
+    setManualFilters((prev) => ({ ...prev, folder }));
+  }, []);
+
+  // A dragged card carries the selection it belongs to, and only itself otherwise.
+  const handleBookmarkDragStart = useCallback(
+    (event, bookmark) => {
+      const ids = multiSelectedBookmarkIds.includes(bookmark.id)
+        ? multiSelectedBookmarkIds
+        : [bookmark.id];
+      if (!event.dataTransfer) return;
+      event.dataTransfer.setData(DRAG_BOOKMARKS, JSON.stringify(ids));
+      event.dataTransfer.effectAllowed = "move";
+    },
+    [multiSelectedBookmarkIds]
   );
 
   // UX-09: Keep modal open during delete; show error on failure; success toast
@@ -764,6 +841,14 @@ const BookmarkApp = () => {
               <Button size="sm" onClick={handleAddNewBookmark}>
                 Add New
               </Button>
+              <Button
+                size="sm"
+                intent="secondary"
+                onClick={() => setIsFolderPaneOpen((open) => !open)}
+                aria-pressed={isFolderPaneOpen}
+              >
+                {isFolderPaneOpen ? "Hide Folders" : "Folders"}
+              </Button>
               <Button size="sm" intent="secondary" onClick={handleImportExportOpen}>
                 Import/Export
               </Button>
@@ -798,94 +883,113 @@ const BookmarkApp = () => {
         className={`bookmarkit-main flex-1 overflow-hidden flex flex-col transition-all duration-300 ${isHeaderVisible ? "bookmarkit-main--header-visible" : "bookmarkit-main--header-hidden"}`}
         role="main"
       >
-        <div className="flex-1 min-h-0 max-w-4xl w-full mx-auto px-4 flex flex-col">
-          {/* Agent plan display */}
-          {lastAction && (
-            <div className="mb-4">
-              <AgentPlan steps={lastAction} error={lastAction.action === "error"} />
-            </div>
-          )}
-
-          <SmartViewBar
-            views={views}
-            activeViewId={activeViewId}
-            canSave={isViewWorthSaving(lastAction, manualFilters)}
-            onApply={applyView}
-            onSave={handleSaveView}
-            onForget={forgetView}
-          />
-
-          <LinkSweepBar
-            running={sweep.running}
-            checked={sweep.checked}
-            total={sweep.total}
-            brokenCount={brokenCount}
-            brokenOnly={manualFilters.brokenOnly}
-            onStop={sweep.stop}
-            onShowBroken={showBrokenOnly}
-          />
-
-          {organizer.running && (
-            <div
-              className="mb-4 p-3 rounded-lg border border-border bg-primary-bg flex items-center gap-3"
-              role="status"
-              aria-live="polite"
-            >
-              <span className="text-sm text-primary-text">
-                Reading your bookmarks… {organizer.done} of {organizer.total}
-              </span>
-              <Button type="button" intent="secondary" size="sm" onClick={organizer.stop}>
-                Stop
-              </Button>
-            </div>
-          )}
-
-          {/* #54: Only for a real multi-selection — a single click is served by the form. */}
-          {multiSelectedBookmarkIds.length > 0 && (
-            <BulkEditBar
-              selected={selectedBookmarks}
-              allBookmarks={bookmarks}
-              onApply={handleBulkEdit}
-              onClearSelection={clearSelectedBookmarks}
-              onDelete={confirmDeleteSelection}
+        <div
+          className={`flex-1 min-h-0 w-full mx-auto px-4 flex gap-4 ${
+            isFolderPaneOpen ? "max-w-6xl" : "max-w-4xl"
+          }`}
+        >
+          {isFolderPaneOpen && (
+            <FolderTree
+              bookmarks={bookmarks}
+              activeFolder={manualFilters.folder}
+              onSelect={selectFolder}
+              onMoveBookmarks={handleMoveToFolder}
+              onMoveFolder={handleRenameFolder}
+              onRenameFolder={handleRenameFolder}
+              onDeleteFolder={handleDeleteFolder}
+              className="w-56 shrink-0 py-1"
             />
           )}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            {/* Agent plan display */}
+            {lastAction && (
+              <div className="mb-4">
+                <AgentPlan steps={lastAction} error={lastAction.action === "error"} />
+              </div>
+            )}
 
-          {/* ARCH-10: Empty state + PERF-06: virtualized list — flex-1 fills remaining viewport height */}
-          <div className="flex-1 min-h-0 pb-4">
-            <BookmarkList
-              bookmarks={displayedBookmarks}
-              selectedBookmarkId={selectedBookmarkId}
-              multiSelectedBookmarkIds={multiSelectedBookmarkIds}
-              bookmarksToDelete={bookmarksToDelete}
-              onBookmarkClick={handleBookmarkClick}
-              onBookmarkDoubleClick={handleBookmarkDoubleClick}
-              onBookmarkKeyDown={handleBookmarkKeyDown}
-              isLoading={isLoading}
-              bookmarksTotal={bookmarks.length}
-              searchActive={!!debouncedSearchQuery || hasActiveFilters(effectiveFilters)}
-              lastAction={lastAction}
-              searchQuery={debouncedSearchQuery || debouncedFilterText}
-              onClearSearch={clearAllFilters}
-              onAddNew={handleAddNewBookmark}
-              onImport={handleImportExportOpen}
-              remoteFavicons={remoteFavicons}
-              filters={manualFilters}
-              tagFacets={tagFacets}
-              onFilterChange={setManualFilters}
-              onCycleTag={handleCycleTag}
-              onClearFilters={clearManualFilters}
-              filterSummary={(() => {
-                const shown =
-                  displayedBookmarks.length === bookmarks.length
-                    ? `${bookmarks.length} total bookmarks`
-                    : `${displayedBookmarks.length} of ${bookmarks.length} bookmarks`;
-                if (multiSelectedBookmarkIds.length > 0)
-                  return `${multiSelectedBookmarkIds.length} selected | ${shown}`;
-                if (selectedBookmarkId) return `1 selected | ${shown}`;
-                return shown;
-              })()}
+            <SmartViewBar
+              views={views}
+              activeViewId={activeViewId}
+              canSave={isViewWorthSaving(lastAction, manualFilters)}
+              onApply={applyView}
+              onSave={handleSaveView}
+              onForget={forgetView}
             />
+
+            <LinkSweepBar
+              running={sweep.running}
+              checked={sweep.checked}
+              total={sweep.total}
+              brokenCount={brokenCount}
+              brokenOnly={manualFilters.brokenOnly}
+              onStop={sweep.stop}
+              onShowBroken={showBrokenOnly}
+            />
+
+            {organizer.running && (
+              <div
+                className="mb-4 p-3 rounded-lg border border-border bg-primary-bg flex items-center gap-3"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="text-sm text-primary-text">
+                  Reading your bookmarks… {organizer.done} of {organizer.total}
+                </span>
+                <Button type="button" intent="secondary" size="sm" onClick={organizer.stop}>
+                  Stop
+                </Button>
+              </div>
+            )}
+
+            {/* #54: Only for a real multi-selection — a single click is served by the form. */}
+            {multiSelectedBookmarkIds.length > 0 && (
+              <BulkEditBar
+                selected={selectedBookmarks}
+                allBookmarks={bookmarks}
+                onApply={handleBulkEdit}
+                onClearSelection={clearSelectedBookmarks}
+                onDelete={confirmDeleteSelection}
+              />
+            )}
+
+            {/* ARCH-10: Empty state + PERF-06: virtualized list — flex-1 fills remaining viewport height */}
+            <div className="flex-1 min-h-0 pb-4">
+              <BookmarkList
+                bookmarks={displayedBookmarks}
+                selectedBookmarkId={selectedBookmarkId}
+                multiSelectedBookmarkIds={multiSelectedBookmarkIds}
+                bookmarksToDelete={bookmarksToDelete}
+                onBookmarkClick={handleBookmarkClick}
+                onBookmarkDoubleClick={handleBookmarkDoubleClick}
+                onBookmarkKeyDown={handleBookmarkKeyDown}
+                onBookmarkDragStart={isFolderPaneOpen ? handleBookmarkDragStart : undefined}
+                isLoading={isLoading}
+                bookmarksTotal={bookmarks.length}
+                searchActive={!!debouncedSearchQuery || hasActiveFilters(effectiveFilters)}
+                lastAction={lastAction}
+                searchQuery={debouncedSearchQuery || debouncedFilterText}
+                onClearSearch={clearAllFilters}
+                onAddNew={handleAddNewBookmark}
+                onImport={handleImportExportOpen}
+                remoteFavicons={remoteFavicons}
+                filters={manualFilters}
+                tagFacets={tagFacets}
+                onFilterChange={setManualFilters}
+                onCycleTag={handleCycleTag}
+                onClearFilters={clearManualFilters}
+                filterSummary={(() => {
+                  const shown =
+                    displayedBookmarks.length === bookmarks.length
+                      ? `${bookmarks.length} total bookmarks`
+                      : `${displayedBookmarks.length} of ${bookmarks.length} bookmarks`;
+                  if (multiSelectedBookmarkIds.length > 0)
+                    return `${multiSelectedBookmarkIds.length} selected | ${shown}`;
+                  if (selectedBookmarkId) return `1 selected | ${shown}`;
+                  return shown;
+                })()}
+              />
+            </div>
           </div>
         </div>
       </main>
@@ -929,6 +1033,7 @@ const BookmarkApp = () => {
             onSave={handleSaveBookmark}
             onDelete={handleDeleteBookmark}
             fetchUrlStatus={fetchUrlStatus}
+            folders={knownFolders}
             provider={runtimeProvider}
             providerOptions={providerOptions}
           />

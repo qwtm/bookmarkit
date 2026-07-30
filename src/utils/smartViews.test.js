@@ -119,6 +119,7 @@ describe("reading views back (#49)", () => {
           excludeTags: ["ok", null],
           minRating: 99,
           brokenOnly: "yes",
+          folder: " Work // Project A ",
           sortBy: "rm -rf",
           order: "sideways",
           extra: "dropped",
@@ -132,6 +133,7 @@ describe("reading views back (#49)", () => {
       excludeTags: ["ok"],
       minRating: 5,
       brokenOnly: false,
+      folder: "Work/Project A",
       sortBy: "",
       order: "asc",
     });

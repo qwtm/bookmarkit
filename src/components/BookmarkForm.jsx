@@ -26,6 +26,7 @@ const BookmarkForm = ({
   onSave,
   onDelete,
   fetchUrlStatus,
+  folders = [],
   provider,
   providerOptions,
 }) => {
@@ -411,6 +412,8 @@ const BookmarkForm = ({
               </Banner>
             )}
           </div>
+          {/* #55: completing against the folders that exist, because a typo here
+              silently creates a folder rather than failing. */}
           <Input
             label="Folder"
             type="text"
@@ -419,7 +422,14 @@ const BookmarkForm = ({
             value={formData.folderId}
             onChange={handleChange}
             placeholder="e.g., work, personal"
+            list="known-folders"
+            hint="Use / for a subfolder, e.g. Work/Project A"
           />
+          <datalist id="known-folders">
+            {folders.map((path) => (
+              <option key={path} value={path} />
+            ))}
+          </datalist>
           <Input
             label="Favicon URL"
             type="url"

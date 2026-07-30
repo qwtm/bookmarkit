@@ -18,6 +18,9 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
 - Saved views
   - Name what is on screen — an agent plan, manual filters, or both — and return
     to it from a chip
+- Folder tree
+  - Browse, filter, and rearrange folders; drag bookmarks into one, drag a folder
+    into another, rename or remove one without losing what it held
 - Semantic search
   - Finds “that article about vector databases” even when none of those words are
     in the bookmark, and keeps the exact matches at the top
@@ -265,6 +268,35 @@ they are titled: `http` and `https`, `www.` and bare, a trailing slash, and
 tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, and similar) are all
 ignored. Path, remaining query, and fragment still distinguish pages. When
 copies differ, the one carrying tags, a rating, or a description is the one kept.
+
+## Folders
+
+There are no folder records anywhere. A folder is a path a bookmark carries in
+`folderId`, so a folder exists because something is in it and stops existing when
+the last bookmark leaves.
+
+"Folders" in the header shows the tree those paths imply, with a count per folder —
+the total including subfolders, marked with `*` when some of it is nested deeper.
+Clicking a folder filters to it and everything under it; clicking it again clears
+that. It is an ordinary filter, so it combines with tags, ratings and search, and a
+saved view can hold it.
+
+Rearranging:
+
+- Drag bookmarks onto a folder to move them. A dragged card takes the whole
+  selection with it, so moving thirty is one drag — and one undo.
+- Drag a folder onto another to renest it; drop it on "All bookmarks" to bring it
+  back to the top level.
+- Rename a folder in place. Its subfolders and their bookmarks come along.
+- Removing a folder never deletes bookmarks: its contents move up into its parent.
+
+The folder field in the add/edit form completes against the folders you already
+have, since typing `Wrok` used to make a folder rather than a mistake. Use `/` for
+subfolders, as in `Work/Project A`.
+
+Two spellings of one name — `Work` and `work` — are treated as the same folder
+everywhere, because a tree showing both would split the count and filtering either
+would show the other's bookmarks.
 
 ## Semantic search
 

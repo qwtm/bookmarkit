@@ -16,6 +16,7 @@
 //   would be reviewing something else than the user asked about.
 
 import { normalizeTag } from "./bookmarkFilters.js";
+import { folderSegments } from "./folderTree.js";
 
 /** The fields a proposal may set. Deliberately not `title` or `url`. */
 export const ORGANIZE_FIELDS = Object.freeze(["tags", "folderId", "description"]);
@@ -81,10 +82,7 @@ const cleanTags = (value) => {
  * is how a tidy-up quietly makes the mess worse.
  */
 export function cleanFolderPath(value, known = []) {
-  const segments = String(value ?? "")
-    .split("/")
-    .map((segment) => segment.replace(/\s+/gu, " ").trim())
-    .filter(Boolean)
+  const segments = folderSegments(value)
     .slice(0, LIMITS.folderDepth)
     .map((segment) => segment.slice(0, LIMITS.folderSegment));
   if (segments.length === 0) return "";
