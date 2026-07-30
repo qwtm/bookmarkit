@@ -199,7 +199,8 @@ Data model:
   - Exports an array of bookmark objects
   - Import expects the same: an array
 
-Bookmark JSON shape (id is optional on import):
+Bookmark JSON shape (id is optional on import, and ignored — an imported bookmark always gets a fresh
+id from the store):
 
 ```json
 [
@@ -218,6 +219,20 @@ Bookmark JSON shape (id is optional on import):
   }
 ]
 ```
+
+Only `url` is required, and it has to be an `http`/`https` address — an entry without one is skipped
+and counted in the message you see before confirming, so the number you approve is the number that will
+actually be added. Everything else is filled in or repaired rather than trusted, which matters if you
+are hand-writing or scripting the file:
+
+| Field                    | If it is missing or the wrong shape                                          |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `title`                  | Falls back to the address                                                    |
+| `tags`                   | A comma-separated string is split into a list; anything else becomes no tags |
+| `rating`                 | Rounded to a whole number and clamped to 0–5; unreadable values become 0     |
+| `createdAt`, `updatedAt` | An unparseable date becomes the time of the import                           |
+| `urlStatus`              | Anything outside `valid`, `invalid`, `ignored` becomes `valid`               |
+| anything else            | Dropped — unknown keys are not carried into your collection                  |
 
 - HTML (Netscape Bookmark File)
   - Compatible with exports from Chrome/Firefox/etc.
