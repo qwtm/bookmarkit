@@ -69,24 +69,37 @@ export function createChromeBookmarksStore() {
     return created.id;
   };
 
-  // Ensure a nested folder path exists under the root (e.g., "Work/Project A") and return the deepest folder id
-  const ensureFolderPath = async (path) => {
+  /**
+   * Ensure a nested folder path exists under the root (e.g., "Work/Project A"),
+   * returning the deepest folder id and the folders that had to be created.
+   *
+   * #17: a caller that may have to undo its write needs to know which folders
+   * were its own doing. An empty folder that was already there belongs to the
+   * user and must survive a rollback.
+   */
+  const openFolderPath = async (path) => {
     const rootId = await ensureRootFolder();
     const clean = (path || "").trim();
-    if (!clean) return rootId;
+    if (!clean) return { id: rootId, created: [] };
     const segments = clean
       .split("/")
       .map((s) => s.trim())
       .filter(Boolean);
+    const created = [];
     let parentId = rootId;
     for (const seg of segments) {
       const children = await chrome.bookmarks.getChildren(parentId);
       let folder = (children || []).find((n) => !n.url && n.title === seg);
-      if (!folder) folder = await chrome.bookmarks.create({ parentId, title: seg });
+      if (!folder) {
+        folder = await chrome.bookmarks.create({ parentId, title: seg });
+        created.push({ id: folder.id, parentId });
+      }
       parentId = folder.id;
     }
-    return parentId;
+    return { id: parentId, created };
   };
+
+  const ensureFolderPath = async (path) => (await openFolderPath(path)).id;
 
   // Convert a chrome bookmark node to our Bookmark shape. folderPath is the path under ROOT ('' when at root)
   const toBookmark = (n, folderPath = "") => ({
@@ -106,26 +119,132 @@ export function createChromeBookmarksStore() {
     urlStatus: "valid",
   });
 
-  // Recursively list all bookmarks under the root and include their folder path (relative to ROOT)
-  const listUnderRoot = async () => {
+  /**
+   * One recursive read of everything under the root, in the two views callers
+   * need: each bookmark node with the folder path it sits in, and each folder
+   * with its parent — #17 has to tidy up folders a write emptied, and emptying
+   * a folder can empty the one above it.
+   */
+  const readCollection = async () => {
     const rootId = await ensureRootFolder();
-    const results = [];
+    const bookmarks = [];
+    const parentOf = new Map();
     // PERF-02: Parallelize sibling folder traversal using Promise.all at each level
     const traverse = async (parentId, pathParts) => {
       const children = await chrome.bookmarks.getChildren(parentId);
       const folderPromises = [];
       for (const child of children) {
         if (child.url) {
-          results.push(toBookmark(child, pathParts.join("/")));
+          bookmarks.push({ node: child, folderPath: pathParts.join("/") });
         } else {
+          parentOf.set(child.id, parentId);
           folderPromises.push(traverse(child.id, [...pathParts, child.title || ""]));
         }
       }
       await Promise.all(folderPromises);
     };
     await traverse(rootId, []);
-    return results;
+    return { bookmarks, parentOf };
   };
+
+  // Recursively list all bookmarks under the root and include their folder path (relative to ROOT)
+  const listUnderRoot = async () => {
+    const { bookmarks } = await readCollection();
+    return bookmarks.map(({ node, folderPath }) => toBookmark(node, folderPath));
+  };
+
+  /**
+   * #43: Every folder under the root that holds at least one bookmark, mapped to
+   * its children in their current order. The subfolders are included because a
+   * bookmark's index is a position among all of its siblings, not among the
+   * bookmarks alone.
+   * @returns {Promise<Map<string, chrome.bookmarks.BookmarkTreeNode[]>>}
+   */
+  const foldersHoldingBookmarks = async () => {
+    const byFolder = new Map();
+    const traverse = async (parentId) => {
+      const children = await chrome.bookmarks.getChildren(parentId);
+      if (children.some((n) => n.url)) byFolder.set(parentId, children);
+      await Promise.all(children.filter((n) => !n.url).map((n) => traverse(n.id)));
+    };
+    await traverse(await ensureRootFolder());
+    return byFolder;
+  };
+
+  // #42: the folder path a bookmark asks for, in the same shape `create` uses.
+  const folderPathOf = (bookmark) =>
+    typeof bookmark.folderId === "string" ? bookmark.folderId.trim() : "";
+
+  /**
+   * #42: Create many bookmarks in the folders their folderId names, rather than
+   * flattening them under the root — an HTML import derives folders from its
+   * <H3> tags and the Chrome tree is what other devices see.
+   *
+   * Each distinct path is resolved once, sequentially, so two bookmarks under
+   * "Work/A" and "Work/B" share one "Work" folder instead of racing to create
+   * two. Creation itself stays parallel (PERF-02).
+   *
+   * Returns successes and failures instead of throwing, so a caller that has
+   * something to lose can decide what a partial result means.
+   */
+  const createInFolders = async (bookmarks) => {
+    const folderIds = new Map();
+    const newFolders = [];
+    for (const path of new Set(bookmarks.map(folderPathOf))) {
+      const { id, created } = await openFolderPath(path);
+      folderIds.set(path, id);
+      newFolders.push(...created);
+    }
+    const settled = await Promise.allSettled(
+      bookmarks.map((b) =>
+        chrome.bookmarks.create({
+          parentId: folderIds.get(folderPathOf(b)),
+          title: b.title || b.url,
+          url: b.url,
+        })
+      )
+    );
+    return {
+      created: settled.filter((r) => r.status === "fulfilled").map((r) => r.value),
+      failures: settled.filter((r) => r.status === "rejected").map((r) => r.reason),
+      newFolders,
+    };
+  };
+
+  const removeQuietly = (ids) =>
+    Promise.all(ids.map((id) => chrome.bookmarks.remove(id).catch(() => {})));
+
+  /**
+   * #17: Remove the named folders that hold nothing, and any parent they empty.
+   *
+   * A folder here exists to hold bookmarks, so one left empty by a write is a
+   * shell: the remains of a replaced collection, or of a replacement that never
+   * landed. Only the ids passed in are candidates — an empty folder the user
+   * made themselves is not this function's business. Removing one requeues its
+   * parent, so order among the candidates does not matter.
+   */
+  const pruneEmptyFolders = async (candidates, parentOf) => {
+    const rootId = await ensureRootFolder();
+    const queue = [...candidates];
+    while (queue.length > 0) {
+      const id = queue.shift();
+      if (!id || id === rootId) continue;
+      try {
+        const children = await chrome.bookmarks.getChildren(id);
+        if (children.length > 0) continue;
+        await chrome.bookmarks.remove(id);
+      } catch {
+        continue; // already gone, or Chrome refused — either way, leave it
+      }
+      queue.push(parentOf.get(id));
+    }
+  };
+
+  const pruneFoldersCreatedBy = (newFolders) =>
+    pruneEmptyFolders(
+      newFolders.map((f) => f.id),
+      new Map(newFolders.map((f) => [f.id, f.parentId]))
+    );
 
   const subscribeChromeEvents = () => {
     const onChange = () => {
@@ -159,26 +278,33 @@ export function createChromeBookmarksStore() {
      */
     async reorderBookmarks(orderedIds = []) {
       await mutate(async () => {
-        const rootId = await ensureRootFolder();
-        const children = await chrome.bookmarks.getChildren(rootId);
-        // Only bookmark nodes (exclude folders)
-        const bookmarkChildren = children.filter((n) => n.url);
-        const existingIds = bookmarkChildren.map((n) => n.id);
-        const set = new Set(orderedIds);
-        const normalized = [
-          // Keep only ids that exist under root
-          ...orderedIds.filter((id) => set.has(id) && existingIds.includes(id)),
-          // Append the rest (not specified), preserving current order
-          ...existingIds.filter((id) => !set.has(id)),
-        ];
-        // Sequentially move each node to its index
-        for (let i = 0; i < normalized.length; i++) {
-          const id = normalized[i];
-          try {
-            await chrome.bookmarks.move(id, { parentId: rootId, index: i });
-          } catch (e) {
-            // Ignore move errors for individual items to keep best-effort ordering
-            console.warn("Failed to move bookmark", id, e);
+        // #43: A bookmark's position is only meaningful among its own siblings,
+        // so the requested order is applied folder by folder. Reading only the
+        // root's children used to drop every id nested in a subfolder, which
+        // silently left most of a foldered collection unsorted.
+        const rank = new Map();
+        orderedIds.forEach((id, index) => {
+          if (!rank.has(id)) rank.set(id, index);
+        });
+
+        for (const [folderId, children] of await foldersHoldingBookmarks()) {
+          const ids = children.filter((n) => n.url).map((n) => n.id);
+          const ranked = ids.filter((id) => rank.has(id)).sort((a, b) => rank.get(a) - rank.get(b));
+          // Ids the caller did not mention keep their relative order, after the
+          // ones it did.
+          const ordered = [...ranked, ...ids.filter((id) => !rank.has(id))];
+          // Only the bookmark slots are rewritten, so subfolders stay where the
+          // user put them.
+          let next = 0;
+          const target = children.map((n) => (n.url ? ordered[next++] : n.id));
+          // Ascending, so each move lands on an index that is already final.
+          for (let i = 0; i < target.length; i++) {
+            try {
+              await chrome.bookmarks.move(target[i], { parentId: folderId, index: i });
+            } catch (e) {
+              // Ignore move errors for individual items to keep best-effort ordering
+              console.warn("Failed to move bookmark", target[i], e);
+            }
           }
         }
       });
@@ -218,6 +344,11 @@ export function createChromeBookmarksStore() {
     teardown() {
       unsubscribeFns.forEach((unsubscribe) => unsubscribe());
       unsubscribeFns = [];
+      // A coalesced notify already scheduled would otherwise wake up after the
+      // store was let go and walk a tree nobody is listening to — which in an
+      // unloading extension page means touching a chrome API that has gone.
+      if (notifyTimer) clearTimeout(notifyTimer);
+      notifyTimer = null;
       listeners.clear();
     },
     async create(bookmark) {
@@ -268,36 +399,50 @@ export function createChromeBookmarksStore() {
     },
     async removeMany(ids = []) {
       // Delete in parallel; ignore per-item failures, then notify once
-      await mutate(() =>
-        Promise.all((ids || []).map((id) => chrome.bookmarks.remove(id).catch(() => {})))
-      );
+      await mutate(() => removeQuietly(ids || []));
     },
+    /**
+     * #17: Replace the whole collection without a window in which it is gone.
+     * The replacements are written first; the originals are removed only once
+     * every one of them exists. A partial failure rolls the new copies back and
+     * reports the error, leaving the collection as it was.
+     *
+     * #42: Folders are part of what gets replaced. The folders the old
+     * bookmarks lived in go with them, so replacing "Archive/Old" with
+     * "Fresh/New" does not leave an empty Archive behind for chrome://bookmarks
+     * and every synced device to show.
+     */
     async bulkReplace(bookmarks) {
       return mutate(async () => {
-        const rootId = await ensureRootFolder();
-        const children = await chrome.bookmarks.getChildren(rootId);
-        // PERF-02: Parallelize bookmark removal, then parallel creation
-        await Promise.all(
-          children.filter((c) => c.url).map((c) => chrome.bookmarks.remove(c.id).catch(() => {}))
+        const { bookmarks: previous, parentOf } = await readCollection();
+        const { created, failures, newFolders } = await createInFolders(bookmarks);
+        if (failures.length > 0) {
+          await removeQuietly(created.map((n) => n.id));
+          await pruneFoldersCreatedBy(newFolders);
+          throw new Error(
+            `Could not write ${failures.length} of ${bookmarks.length} bookmarks, so nothing was replaced: ${failures[0]?.message || failures[0]}`
+          );
+        }
+        await removeQuietly(previous.map((b) => b.node.id));
+        await pruneEmptyFolders(
+          previous.map((b) => b.node.parentId),
+          parentOf
         );
-        return Promise.all(
-          bookmarks.map((b) =>
-            chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
-          )
-        );
+        return created;
       });
     },
     async bulkAdd(bookmarks) {
-      const createdNodes = await mutate(async () => {
-        const rootId = await ensureRootFolder();
-        // PERF-02: Create all bookmarks in parallel instead of sequentially
-        return Promise.all(
-          bookmarks.map((b) =>
-            chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
-          )
-        );
+      const { created, failures } = await mutate(async () => {
+        const result = await createInFolders(bookmarks);
+        // A folder opened for a bookmark that never landed is a shell too.
+        if (result.failures.length > 0) await pruneFoldersCreatedBy(result.newFolders);
+        return result;
       });
-      return createdNodes.map((n) => toBookmark(n));
+      // Adding is additive, so the bookmarks that did land are kept, but the
+      // caller still hears that the rest did not.
+      if (failures.length > 0) throw failures[0];
+      // No failures, so created[i] is the node for bookmarks[i].
+      return created.map((n, i) => toBookmark(n, folderPathOf(bookmarks[i])));
     },
   };
 
