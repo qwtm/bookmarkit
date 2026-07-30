@@ -163,28 +163,8 @@ const BookmarkForm = ({
   };
 
   // A11Y-03: Keyboard navigation for star rating
-  const handleRatingChange = (newRating) => {
-    setFormData((prev) => ({
-      ...prev,
-      rating: prev.rating === newRating ? 0 : newRating,
-    }));
-  };
-
-  const handleRatingKeyDown = (e, star) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      handleRatingChange(star);
-    } else if (e.key === "ArrowRight") {
-      e.preventDefault();
-      const next = Math.min(5, star + 1);
-      handleRatingChange(next);
-      document.getElementById(`star-${next}`)?.focus();
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      const prev = Math.max(1, star - 1);
-      handleRatingChange(prev);
-      document.getElementById(`star-${prev}`)?.focus();
-    }
+  const handleRatingChange = (rating) => {
+    setFormData((prev) => ({ ...prev, rating }));
   };
 
   const doSave = () => {
@@ -412,12 +392,7 @@ const BookmarkForm = ({
           />
           <div>
             <p className="text-sm font-medium text-primary-text mb-1">Rating</p>
-            <StarRating
-              value={formData.rating}
-              onChange={handleRatingChange}
-              onStarKeyDown={handleRatingKeyDown}
-              idPrefix="star"
-            />
+            <StarRating value={formData.rating} onChange={handleRatingChange} />
           </div>
         </div>
         {pendingAction ? (
