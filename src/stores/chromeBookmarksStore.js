@@ -218,6 +218,11 @@ export function createChromeBookmarksStore() {
     teardown() {
       unsubscribeFns.forEach((unsubscribe) => unsubscribe());
       unsubscribeFns = [];
+      // A coalesced notify already scheduled would otherwise wake up after the
+      // store was let go and walk a tree nobody is listening to — which in an
+      // unloading extension page means touching a chrome API that has gone.
+      if (notifyTimer) clearTimeout(notifyTimer);
+      notifyTimer = null;
       listeners.clear();
     },
     async create(bookmark) {
