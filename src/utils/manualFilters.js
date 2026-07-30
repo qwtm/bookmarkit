@@ -10,12 +10,15 @@ import {
   sortBookmarks,
   normalizeTag,
 } from "./bookmarkFilters.js";
+import { findBrokenLinks } from "./linkHealth.js";
 
 export const EMPTY_FILTERS = Object.freeze({
   text: "",
   includeTags: [],
   excludeTags: [],
   minRating: 0,
+  // #47: only the links the last check could not reach.
+  brokenOnly: false,
   sortBy: "",
   order: "asc",
 });
@@ -66,6 +69,7 @@ export function hasActiveFilters(filters) {
     filters.includeTags?.length ||
     filters.excludeTags?.length ||
     filters.minRating > 0 ||
+    filters.brokenOnly ||
     filters.sortBy
   );
 }
@@ -113,6 +117,8 @@ export function applyManualFilters(filters, list = []) {
   if (filters.minRating > 0) {
     result = filterByRating({ minRating: filters.minRating, comparator: "gte" }, result);
   }
+
+  if (filters.brokenOnly) result = findBrokenLinks(result);
 
   if (filters.sortBy) {
     result = sortBookmarks(filters.sortBy, filters.order || "asc", result);

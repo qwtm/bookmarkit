@@ -203,3 +203,25 @@ describe("chip counts agree with chip filtering (regression, #58)", () => {
     expect(shown.map((b) => b.id)).toEqual(["3"]);
   });
 });
+
+describe("brokenOnly (#47)", () => {
+  const withStatus = [
+    { id: "1", title: "Alive", url: "http://a.com", urlStatus: "valid" },
+    { id: "2", title: "Dead", url: "http://b.com", urlStatus: "invalid" },
+    { id: "3", title: "Left alone", url: "http://c.com", urlStatus: "ignored" },
+  ];
+
+  it("keeps only the links the last check could not reach", () => {
+    const filtered = applyManualFilters({ ...EMPTY_FILTERS, brokenOnly: true }, withStatus);
+
+    expect(filtered.map((b) => b.id)).toEqual(["2"]);
+  });
+
+  it("changes nothing while it is off", () => {
+    expect(applyManualFilters(EMPTY_FILTERS, withStatus)).toHaveLength(3);
+  });
+
+  it("counts as an active filter, so Clear filters reaches it", () => {
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, brokenOnly: true })).toBe(true);
+  });
+});

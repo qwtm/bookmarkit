@@ -19,6 +19,7 @@ const KNOWN_ACTIONS = new Set([
   "findStartsWith",
   "findWithTags",
   "filterByRating",
+  "findBrokenLinks",
   "sortBookmarks",
   "limitResults",
   "limitFirst",
@@ -64,6 +65,8 @@ const ACTION_SCHEMAS = {
   importBookmarks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
   exportBookmarks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
   removeDuplicates: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+  // #47: takes no parameters — the status it filters on was written by the sweep.
+  findBrokenLinks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
   help: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
 
   searchBookmarks(p) {

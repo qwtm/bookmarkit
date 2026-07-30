@@ -118,6 +118,7 @@ describe("reading views back (#49)", () => {
           includeTags: "not-a-list",
           excludeTags: ["ok", null],
           minRating: 99,
+          brokenOnly: "yes",
           sortBy: "rm -rf",
           order: "sideways",
           extra: "dropped",
@@ -130,6 +131,7 @@ describe("reading views back (#49)", () => {
       includeTags: [],
       excludeTags: ["ok"],
       minRating: 5,
+      brokenOnly: false,
       sortBy: "",
       order: "asc",
     });

@@ -98,6 +98,17 @@ const FilterBar = React.memo(function FilterBar({
           ]}
         />
 
+        {/* #47: what the sweep found, as a filter — the status it reads is written
+            by the link check, so this stays useful with no LLM and no network. */}
+        <Button
+          type="button"
+          intent={filters.brokenOnly ? "primary" : "secondary"}
+          onClick={() => onChange({ ...filters, brokenOnly: !filters.brokenOnly })}
+          aria-pressed={Boolean(filters.brokenOnly)}
+        >
+          Broken only
+        </Button>
+
         <Select
           id="filter-sort"
           value={filters.sortBy}

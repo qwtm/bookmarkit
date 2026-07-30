@@ -38,6 +38,7 @@ and tested without a UI:
 | `useAgentEngine`          | One agent request: rate limiting, cancellation, discarding superseded replies, parsing, and error classification. |
 | `useBookmarkSelection`    | Which bookmarks are selected, and the pointer and key gestures that change that.                                  |
 | `useKeyboardShortcuts`    | App-level shortcuts, suspended while a dialog is open.                                                            |
+| `useLinkSweep`            | The dead-link sweep: which links to check next, how fast, and where the answers go.                               |
 | `useSmartViews`           | Saved views: reading them from storage, and writing the list back.                                                |
 | `useUndoHistory`          | The undo stack and the toast offering its newest entry.                                                           |
 | `useTheme`, `useDebounce` | Theme selection; debounced values.                                                                                |
@@ -90,6 +91,36 @@ the app's shortcuts from firing behind an open dialog and stops a nested dialog
 from closing its parent. App-level shortcuts are declared through
 `useKeyboardShortcuts`, which skips typing contexts and is suspended entirely
 while any dialog is open.
+
+## Link health
+
+Link rot is split three ways, on purpose. `utils/linkHealth.js` is the domain as
+pure data: which bookmarks are worth checking, what a result means for the one
+checked, and how the record of past checks reads back from storage.
+`utils/urlStatus.js` is the single way the app asks whether a URL answers — the
+privileged service worker in the extension, a direct fetch in the web build — so
+the select-time check and the sweep cannot drift apart. `useLinkSweep` supplies
+only pacing and bookkeeping.
+
+Two decisions in the sweep are load-bearing:
+
+- It runs in the app, not from a `chrome.alarms` handler in the service worker.
+  `urlStatus` belongs to the store, and the store is not reachable from a worker:
+  the local composite store keeps metadata in `localStorage`, and the Firebase
+  store needs the signed-in client. A worker writing statuses would be a second
+  write path around the store contract. What is persisted instead is when each
+  link was last checked, so a sweep resumes across sessions rather than
+  restarting, which is what the periodic behavior was for.
+- It is asked for rather than automatic, and it never re-points a bookmark.
+  Checking every link contacts every host in the collection — the same privacy
+  question site icons answered with an opt-in — and a redirect target is the
+  remote server's claim, which is precisely what `redirect: "manual"` exists to
+  refuse. The sweep writes `urlStatus` and nothing else; what to do about a dead
+  link is left to the user, through the ordinary edit, bulk-edit and delete
+  paths.
+
+Its writes deliberately skip the undo recorder: a sweep reports what the web
+already did, and an undo would mean writing back a status known to be wrong.
 
 ## Undo
 
@@ -191,7 +222,10 @@ never be committed.
 - URL reachability checks execute in `public/background.js`, not page context.
   They accept only public HTTP(S) destinations and do not follow redirects, so
   the extension's broad host permission does not become an internal-network
-  request primitive.
+  request primitive. `utils/urlStatus.js` applies both rules on the calling side
+  too, which is what keeps the web build's unprivileged fetch inside the same
+  boundary: the response may be unreadable there, but the request still leaves the
+  browser.
 - The release archive includes `LICENSE` and generated
   `THIRD-PARTY-NOTICES.md`. The latter is derived from the locked production
   dependency closure and checked for drift in CI.

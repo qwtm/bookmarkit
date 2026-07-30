@@ -29,6 +29,7 @@ const ACTIONS = [
   "findStartsWith({field,value})",
   "findWithTags({includeTags,excludeTags?})",
   "filterByRating({minRating?,maxRating?,comparator?,exact?})",
+  "findBrokenLinks",
   "sortBookmarks({sortBy,order})",
   "limitResults({count,direction?,scope?})",
   "limitFirst({count})",
