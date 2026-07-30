@@ -18,6 +18,23 @@ function folderSegments(folderId) {
     .filter(Boolean);
 }
 
+// The TAGS attribute is one comma-separated string in both directions.
+function parseTags(value) {
+  return String(value || "")
+    .split(",")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+// A bookmark's tags are not guaranteed to be an array: a JSON import writes
+// through whatever the file said. Normalise to the reader's rule rather than
+// letting a stored string break the export.
+function tagsOf(bookmark) {
+  const { tags } = bookmark;
+  if (Array.isArray(tags)) return tags.map((tag) => String(tag).trim()).filter(Boolean);
+  return typeof tags === "string" ? parseTags(tags) : [];
+}
+
 // Group bookmarks into a folder tree. Map preserves insertion order, so the
 // exported file keeps the order the caller passed in.
 function buildFolderTree(bookmarks) {
@@ -49,7 +66,8 @@ function anchorLine(bookmark) {
   ];
   if (bookmark.faviconUrl) attributes.push(`ICON="${escapeHtml(bookmark.faviconUrl)}"`);
   if (bookmark.description) attributes.push(`DESCRIPTION="${escapeHtml(bookmark.description)}"`);
-  if (bookmark.tags?.length) attributes.push(`TAGS="${escapeHtml(bookmark.tags.join(","))}"`);
+  const tags = tagsOf(bookmark);
+  if (tags.length) attributes.push(`TAGS="${escapeHtml(tags.join(","))}"`);
   if (bookmark.rating) attributes.push(`RATING="${escapeHtml(bookmark.rating)}"`);
   return `<A ${attributes.join(" ")}>${escapeHtml(bookmark.title)}</A>`;
 }
@@ -102,13 +120,6 @@ function folderPathFor(link) {
     list = list.parentElement?.closest("dl");
   }
   return segments.join("/");
-}
-
-function parseTags(value) {
-  return String(value || "")
-    .split(",")
-    .map((tag) => tag.trim())
-    .filter(Boolean);
 }
 
 /**
