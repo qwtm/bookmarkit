@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { useBookmarkSelection } from "./useBookmarkSelection.js";
+import { keepsSelectionProps, useBookmarkSelection } from "./useBookmarkSelection.js";
 
 const BOOKMARKS = [
   { id: "a", url: "https://a.example" },
@@ -32,6 +32,10 @@ const Probe = ({ onOpen = () => {} }) => {
         />
       ))}
       <div aria-label="empty space" />
+      {/* Stands in for the bulk edit bar: a control that acts on the selection. */}
+      <div {...keepsSelectionProps}>
+        <button type="button" aria-label="bulk control" />
+      </div>
     </div>
   );
 };
@@ -158,6 +162,18 @@ describe("useBookmarkSelection (#26)", () => {
 
     expect(screen.getByTestId("checked")).toHaveTextContent("none");
     expect(screen.getByTestId("acting-on")).toHaveTextContent("none");
+  });
+
+  // #54: the bulk bar operates on the selection, so clicking it must not dismiss
+  // the selection first — which would unmount the bar mid-interaction.
+  it("keeps the selection when a control that acts on it is clicked", () => {
+    render(<Probe />);
+
+    fireEvent.click(card("a"), { ctrlKey: true });
+    fireEvent.click(card("b"), { ctrlKey: true });
+    fireEvent.mouseDown(screen.getByLabelText("bulk control"));
+
+    expect(screen.getByTestId("checked")).toHaveTextContent("a,b");
   });
 
   it("stops listening for outside clicks once unmounted", () => {

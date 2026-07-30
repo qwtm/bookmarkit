@@ -8,6 +8,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+// The attribute a region sets to say "clicking me is part of acting on the
+// selection", and the props that set it. Exported together so the marker and the
+// rule that reads it cannot drift apart.
+const KEEPS_SELECTION = "data-keeps-selection";
+export const keepsSelectionProps = Object.freeze({ [KEEPS_SELECTION]: "" });
+
 /**
  * @param {(bookmark: object) => void} onOpen Shift+click and Shift+Enter open a
  *   bookmark rather than select it. Opening is not this hook's concern, so it is
@@ -24,9 +30,19 @@ export function useBookmarkSelection(onOpen) {
 
   // A mousedown anywhere that is not a bookmark card (cards stop propagation)
   // clears the selection: header, buttons, dialogs, empty space, everything.
+  //
+  // Except the controls that act *on* the selection, which would otherwise
+  // dismiss the thing they operate on the moment they were clicked. Those mark
+  // themselves with `data-keeps-selection`, which survives a control being
+  // rearranged or wrapped in a way that stopping propagation by hand does not.
   useEffect(() => {
-    document.addEventListener("mousedown", clear);
-    return () => document.removeEventListener("mousedown", clear);
+    const onMouseDown = (event) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(`[${KEEPS_SELECTION}]`)) return;
+      clear();
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
   }, [clear]);
 
   const open = useCallback(

@@ -116,6 +116,9 @@ describe("inverseOf (#56)", () => {
     expect(inverseOf({ kind: "create", created: { id: "1" } }).endsHistory).toBe(false);
     expect(inverseOf({ kind: "append", added: [{ id: "1" }] }).endsHistory).toBe(false);
     expect(inverseOf({ kind: "reorder", order: ["1"] }).endsHistory).toBe(false);
+    expect(
+      inverseOf({ kind: "bulkEdit", previousPatches: [{ id: "1", tags: [] }] }).endsHistory
+    ).toBe(false);
   });
 
   it("keeps the offer to undo a replacement until it is used", () => {

@@ -194,6 +194,16 @@ describe("BulkEditBar (#54)", () => {
     expect(onDelete).toHaveBeenCalled();
   });
 
+  // Without this the document-level handler in useBookmarkSelection clears the
+  // selection on mousedown, unmounting the bar before a control can be used.
+  it("marks itself as part of acting on the selection", () => {
+    setup({ selected: selection(2) });
+
+    expect(screen.getByRole("group", { name: /Bulk edit/ })).toHaveAttribute(
+      "data-keeps-selection"
+    );
+  });
+
   it("lets the selection go", () => {
     const { onClearSelection } = setup();
 

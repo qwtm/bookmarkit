@@ -9,6 +9,7 @@
 // the app's dialog stack.
 
 import React, { useMemo, useState } from "react";
+import { keepsSelectionProps } from "../hooks/useBookmarkSelection.js";
 import { describeBulkEdit, isEmptyChange, planBulkEdit } from "../utils/bulkEdit.js";
 import { Button, Input, Select } from "./DesignSystem.jsx";
 
@@ -82,8 +83,10 @@ const BulkEditBar = React.memo(function BulkEditBar({
   const folders = folderOptions(allBookmarks);
 
   return (
+    // Clicking a control here must not dismiss the selection it acts on.
     <div
       className="mb-4 p-3 rounded-lg border border-accent bg-primary-bg"
+      {...keepsSelectionProps}
       role="group"
       aria-label={`Bulk edit ${count} selected bookmark${count === 1 ? "" : "s"}`}
     >
