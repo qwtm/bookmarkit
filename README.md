@@ -25,6 +25,8 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
   - Add, edit, delete, tag, folder, rating, favicon support
   - Multi‑select (Cmd/Ctrl+Click), open in new tab (Shift+Click)
   - Detect and remove duplicates (by title + URL)
+  - Bulk edit a multi-selection: add or remove tags, move to a folder, set or
+    clear ratings
   - Undo the last ten changes with Cmd/Ctrl+Z — edits, adds, deletes, imports,
     de‑duplication, sorts, and “replace all”
 - URL status
@@ -262,6 +264,24 @@ copies differ, the one carrying tags, a rating, or a description is the one kept
 - Cmd/Ctrl+D or D: delete selected (with confirmation)
 - Space (on focused tile): select/open depending on context
 - Cmd/Ctrl+Z: undo the last change
+
+## Bulk editing
+
+Select several bookmarks (Cmd/Ctrl+Click, or Cmd/Ctrl+A for everything shown) and
+a bar appears above the list:
+
+- **Add tags** and **remove tags** are additive, not a replacement. Adding
+  `reading` to forty bookmarks keeps whatever else each of them was tagged with.
+  Matching ignores case, so removing `react` also removes `React`.
+- **Folder** moves the selection into an existing folder, a new path you type, or
+  out of any folder.
+- **Rating** sets or clears a rating across the selection.
+
+The bar says what it is about to do and how many bookmarks it would leave alone
+because they already match. Those are not written at all, so bulk-tagging does
+not stamp a new modified date on bookmarks it did not change. Past ten
+bookmarks, Apply asks once more before writing. The whole batch is one change,
+so one Cmd/Ctrl+Z takes all of it back.
 
 ## Undo
 

@@ -104,6 +104,14 @@ const INVERSES = {
     );
   },
 
+  // #54: One entry for the batch. Only the fields the edit touched are put back,
+  // so undoing a retag does not revert a rating changed since.
+  bulkEdit: ({ previousPatches }) =>
+    previousPatches?.length && {
+      label: `Undo bulk edit (${previousPatches.length})`,
+      apply: (writes) => writes.applyBulkEdit(previousPatches),
+    },
+
   reorder: ({ order }) =>
     order?.length && {
       label: "Undo sort",
@@ -115,13 +123,15 @@ const INVERSES = {
  * How to undo one write.
  *
  * @param {object} operation What was done, and what it needs to be undone.
- * @param {"edit"|"create"|"delete"|"replaceAll"|"append"|"reorder"} operation.kind
+ * @param {"edit"|"create"|"delete"|"replaceAll"|"append"|"bulkEdit"|"reorder"} operation.kind
  * @param {object} [operation.previous] `edit`: the bookmark as it was.
  * @param {object} [operation.created] `create`: the bookmark that now exists.
  * @param {object[]} [operation.removed] `delete`: the bookmarks that were removed,
  *   with their metadata — restoring gutted bookmarks is not restoring them.
  * @param {object[]} [operation.replaced] `replaceAll`: the whole previous collection.
  * @param {object[]} [operation.added] `append`: the bookmarks that were added.
+ * @param {object[]} [operation.previousPatches] `bulkEdit`: one patch per bookmark,
+ *   holding the touched fields as they were.
  * @param {string[]} [operation.order] `reorder`: the previous order, by id.
  * @returns {{label: string, destructive: boolean, endsHistory: boolean,
  *   apply: (writes: object) => Promise<void>}|null}

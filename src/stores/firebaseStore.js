@@ -130,6 +130,17 @@ export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken })
       const ref = doc(collectionRef(), id);
       await setDoc(ref, { ...patch, updatedAt: new Date().toISOString() }, { merge: true });
     },
+    // #54: A bulk edit is one commit rather than one request per bookmark.
+    async updateMany(patches = []) {
+      if (!patches || patches.length === 0) return;
+      const now = new Date().toISOString();
+      const ops = patches.map(
+        ({ id, ...patch }) =>
+          (batch) =>
+            batch.set(doc(collectionRef(), id), { ...patch, updatedAt: now }, { merge: true })
+      );
+      await commitInChunks(ops);
+    },
     async remove(id) {
       const ref = doc(collectionRef(), id);
       await deleteDoc(ref);

@@ -8,6 +8,7 @@ const writes = () => ({
   appendBookmarks: vi.fn().mockResolvedValue(undefined),
   saveAllBookmarks: vi.fn().mockResolvedValue(undefined),
   reorderBookmarks: vi.fn().mockResolvedValue(undefined),
+  applyBulkEdit: vi.fn().mockResolvedValue(undefined),
 });
 
 describe("inverseOf (#56)", () => {
@@ -146,6 +147,21 @@ describe("inverseOf (#56)", () => {
     expect(w.deleteBookmarks).toHaveBeenCalledWith(["10"]);
   });
 
+  it("takes a whole bulk edit back with one entry", async () => {
+    const w = writes();
+    const previousPatches = [
+      { id: "1", tags: ["react"] },
+      { id: "2", tags: [] },
+    ];
+
+    const inverse = inverseOf({ kind: "bulkEdit", previousPatches });
+    await inverse.apply(w);
+
+    expect(inverse.label).toBe("Undo bulk edit (2)");
+    expect(w.applyBulkEdit).toHaveBeenCalledTimes(1);
+    expect(w.applyBulkEdit).toHaveBeenCalledWith(previousPatches);
+  });
+
   it("restores the order a sort replaced", async () => {
     const w = writes();
 
@@ -164,6 +180,7 @@ describe("inverseOf (#56)", () => {
     ["a delete of nothing", { kind: "delete", removed: [] }],
     ["an import that added nothing", { kind: "append", added: [] }],
     ["a reorder with no previous order", { kind: "reorder", order: [] }],
+    ["a bulk edit that changed nothing", { kind: "bulkEdit", previousPatches: [] }],
     ["a write of an unknown kind", { kind: "somethingElse" }],
   ])("offers no undo for %s", (_name, operation) => {
     expect(inverseOf(operation)).toBeNull();

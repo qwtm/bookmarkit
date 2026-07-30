@@ -29,6 +29,7 @@ import ImportExportContent from "./ImportExportContent";
 import DeleteConfirmModal from "./DeleteConfirmModal";
 import OptionsModal from "./OptionsModal";
 import BookmarkList from "./BookmarkList.jsx";
+import BulkEditBar from "./BulkEditBar.jsx";
 import { AgentPlan, Button, IconButton, Kbd, Modal, SearchBar, Toast } from "./DesignSystem.jsx";
 
 // Plan steps that write a new order to the store, rather than sorting the view.
@@ -71,6 +72,7 @@ const BookmarkApp = () => {
     saveAllBookmarks,
     appendBookmarks,
     persistSortedOrder,
+    applyBulkEdit,
   } = useBookmarkStore(undo.record);
 
   // Init store on mount
@@ -204,6 +206,13 @@ const BookmarkApp = () => {
 
   const tagFacets = useMemo(() => deriveTagCounts(plannedBookmarks), [plannedBookmarks]);
 
+  // #54: The bulk bar needs the bookmarks, not just their ids — what a change
+  // would write depends on what each of them currently holds.
+  const selectedBookmarks = useMemo(
+    () => bookmarks.filter((b) => multiSelectedBookmarkIds.includes(b.id)),
+    [bookmarks, multiSelectedBookmarkIds]
+  );
+
   const displayedBookmarks = useMemo(
     () =>
       applyManualFilters(effectiveFilters, plannedBookmarks).map((b) =>
@@ -232,6 +241,21 @@ const BookmarkApp = () => {
     setBookmarksToDelete([id]);
     setIsDeleteConfirmModalOpen(true);
   }, []);
+
+  // #54: The bar plans the patches; applying them and saying how many landed is
+  // the app's business, as with any other write.
+  const handleBulkEdit = useCallback(
+    async (patches) => {
+      try {
+        await applyBulkEdit(patches);
+        showCustomMessage(`Updated ${patches.length} bookmark(s).`, "success");
+      } catch (e) {
+        console.error("Bulk edit failed:", e);
+        showCustomMessage("Failed to update the selected bookmarks. Please try again.", "error");
+      }
+    },
+    [applyBulkEdit]
+  );
 
   // UX-09: Keep modal open during delete; show error on failure; success toast
   const handleConfirmDelete = useCallback(async () => {
@@ -663,6 +687,17 @@ const BookmarkApp = () => {
             <div className="mb-4">
               <AgentPlan steps={lastAction} error={lastAction.action === "error"} />
             </div>
+          )}
+
+          {/* #54: Only for a real multi-selection — a single click is served by the form. */}
+          {multiSelectedBookmarkIds.length > 0 && (
+            <BulkEditBar
+              selected={selectedBookmarks}
+              allBookmarks={bookmarks}
+              onApply={handleBulkEdit}
+              onClearSelection={clearSelectedBookmarks}
+              onDelete={confirmDeleteSelection}
+            />
           )}
 
           {/* ARCH-10: Empty state + PERF-06: virtualized list — flex-1 fills remaining viewport height */}

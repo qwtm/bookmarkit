@@ -89,6 +89,8 @@ an `apply` — and hands it to `useUndoHistory`. Three consequences worth keepin
   progress included, rather than a second and less careful copy.
 - A write with no honest inverse records nothing rather than offering an undo
   that fails when reached for.
+- A batch is one entry. A bulk edit over forty bookmarks is one undo, and it
+  restores only the fields the edit touched.
 - The history outlives the toast. The toast is an offer with a timer; the stack
   is what `Cmd+Z` walks back through, and writes an undo makes are not recorded,
   so undo never turns into redo. A destructive write's offer does not expire.
@@ -116,6 +118,12 @@ walking the tree, so treating each event as a change made an N-item write cost N
 walks. `chromeBookmarksStore` ignores the events its own writes echo back and
 coalesces bursts it did not cause. Anything added to a store must keep that
 property: one write, one notification, whatever its size.
+
+A few contract methods are optional, `updateMany` among them: a store implements
+it when it can write a whole selection in one round-trip, as Firestore can with a
+batch, and callers fall back to writing one bookmark at a time. The fallback is
+part of the contract rather than a workaround, so a new store is useful before it
+is complete.
 
 ## LLM boundary
 
