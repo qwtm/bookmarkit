@@ -19,7 +19,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useLLMSettings } from "../hooks/useLLMSettings.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useDebounce } from "../hooks/useDebounce.js";
-import { useUndoToast } from "../hooks/useUndoToast.js";
+import { useUndoHistory } from "../hooks/useUndoHistory.js";
 
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import HelpModal from "./HelpModal";
@@ -57,6 +57,9 @@ const BookmarkApp = () => {
   const { currentTheme, themes, selectTheme, uploadTheme } = useTheme();
 
   // ─── Store ──────────────────────────────────────────────────────────────────
+  // #56: every write records its own inverse, so undo covers whatever the store
+  // is asked to do rather than the two operations that remembered to snapshot.
+  const undo = useUndoHistory(showCustomMessage);
   const {
     bookmarks,
     isLoading,
@@ -68,7 +71,7 @@ const BookmarkApp = () => {
     saveAllBookmarks,
     appendBookmarks,
     persistSortedOrder,
-  } = useBookmarkStore();
+  } = useBookmarkStore(undo.record);
 
   // Init store on mount
   useEffect(() => init(showCustomMessage), []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -106,8 +109,6 @@ const BookmarkApp = () => {
   const [messageModalContent, setMessageModalContent] = useState({ message: "", type: "info" });
   // #53: manual filter state, independent of the agent plan so neither clobbers the other.
   const [manualFilters, setManualFilters] = useState(EMPTY_FILTERS);
-
-  const undo = useUndoToast();
 
   // #11: only http(s) URLs open — javascript: and data: are refused out loud
   // rather than silently ignored.
@@ -238,9 +239,6 @@ const BookmarkApp = () => {
     const ids = [...bookmarksToDelete];
     if (ids.length === 0) return;
 
-    // UX-05: Snapshot before deletion for undo
-    const snapshot = bookmarks.filter((b) => ids.includes(b.id));
-
     setIsDeleting(true);
     try {
       await deleteBookmarks(ids);
@@ -248,11 +246,6 @@ const BookmarkApp = () => {
       setIsModalOpen(false);
       clearSelectedBookmarks();
       showCustomMessage(`Deleted ${ids.length} bookmark(s).`, "success");
-
-      // UX-05: Offer undo
-      undo.offer(`Undo delete (${ids.length})`, async () => {
-        await appendBookmarks(snapshot, showCustomMessage);
-      });
     } catch (e) {
       console.error("Delete failed:", e);
       // UX-09: Error message persists (no auto-dismiss) — user must acknowledge data loss risk
@@ -261,15 +254,7 @@ const BookmarkApp = () => {
       setIsDeleting(false);
       setBookmarksToDelete([]);
     }
-  }, [
-    bookmarks,
-    bookmarksToDelete,
-    deleteBookmarks,
-    appendBookmarks,
-    storeRef,
-    undo,
-    clearSelectedBookmarks,
-  ]);
+  }, [bookmarksToDelete, deleteBookmarks, storeRef, clearSelectedBookmarks]);
 
   const handleCancelDelete = useCallback(() => {
     setBookmarksToDelete([]);
@@ -355,6 +340,12 @@ const BookmarkApp = () => {
   useKeyboardShortcuts(
     {
       Escape: clearSelection,
+      // #56: the history outlives the toast, so this reaches writes whose offer
+      // has already gone.
+      "Mod+z": (event) => {
+        event.preventDefault();
+        undo.undoLast();
+      },
       h: () => setIsHeaderVisible((prev) => !prev),
       // #22: select the currently visible (filtered) bookmarks, not the whole store
       "Mod+a": (event) => {
@@ -398,8 +389,6 @@ const BookmarkApp = () => {
         const sortStep = plan.find((s) => s.action === "sortBookmarks");
         if (sortStep?.parameters?.sortBy) sortBy = sortStep.parameters.sortBy;
       }
-      // UX-05: snapshot current order before reordering
-      const orderedIds = [...bookmarks].map((b) => b.id);
       try {
         await persistSortedOrder({ sortBy, order });
         showCustomMessage(
@@ -414,16 +403,12 @@ const BookmarkApp = () => {
           );
           setLastAction(withoutSort.length > 0 ? withoutSort : null);
         }
-        undo.offer("Undo sort", async () => {
-          if (storeRef.current?.reorderBookmarks)
-            await storeRef.current.reorderBookmarks(orderedIds);
-        });
       } catch (e) {
         console.error("Persist reorder failed", e);
         showCustomMessage("Failed to persist new order.", "error");
       }
     },
-    [bookmarks, lastAction, persistSortedOrder, storeRef, undo]
+    [lastAction, persistSortedOrder, storeRef]
   );
 
   const handlePersistReorderFromAgent = useCallback(
@@ -596,16 +581,9 @@ const BookmarkApp = () => {
       )}
 
       {/* UX-05: Undo toast */}
-      {undo.action && (
+      {undo.offered && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
-          <Toast
-            label={undo.action.label}
-            onAction={async () => {
-              undo.dismiss();
-              await undo.action.restore();
-            }}
-            onDismiss={undo.dismiss}
-          />
+          <Toast label={undo.offered.label} onAction={undo.undoLast} onDismiss={undo.dismiss} />
         </div>
       )}
 

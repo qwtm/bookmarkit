@@ -33,12 +33,12 @@ and tested without a UI:
 
 | Hook                      | Owns                                                                                                              |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `useBookmarkStore`        | The active store, the bookmark list, and every write path.                                                        |
+| `useBookmarkStore`        | The active store, the bookmark list, every write path, and the inverse each write records.                        |
 | `useLLMSettings`          | Which provider is in use, its options, and the passphrase lock protecting the API key at rest.                    |
 | `useAgentEngine`          | One agent request: rate limiting, cancellation, discarding superseded replies, parsing, and error classification. |
 | `useBookmarkSelection`    | Which bookmarks are selected, and the pointer and key gestures that change that.                                  |
 | `useKeyboardShortcuts`    | App-level shortcuts, suspended while a dialog is open.                                                            |
-| `useUndoToast`            | The one-level undo offer and its timer.                                                                           |
+| `useUndoHistory`          | The undo stack and the toast offering its newest entry.                                                           |
 | `useTheme`, `useDebounce` | Theme selection; debounced values.                                                                                |
 
 The dividing line is worth stating, because it is what keeps the orchestration
@@ -50,7 +50,9 @@ plan itself is component state, since the view, the manual filters, and a
 persisted reorder all read it.
 
 `src/popup/QuickAdd.jsx` is a separate small surface, but it uses the same store
-hook and theme hook so bookmark writes do not fork.
+hook and theme hook so bookmark writes do not fork. It passes no undo recorder,
+which is how a surface opts out of undo: there is nowhere in a popup that closes
+on save to offer it.
 
 The visible list is a projection, never a second source of truth:
 
@@ -74,6 +76,22 @@ the app's shortcuts from firing behind an open dialog and stops a nested dialog
 from closing its parent. App-level shortcuts are declared through
 `useKeyboardShortcuts`, which skips typing contexts and is suspended entirely
 while any dialog is open.
+
+## Undo
+
+Undo is a property of the write path, not of the two call sites that remember to
+snapshot. `useBookmarkStore` derives the inverse of each successful write from
+the write itself — `src/utils/bookmarkUndo.js` maps an operation to a label and
+an `apply` — and hands it to `useUndoHistory`. Three consequences worth keeping:
+
+- An inverse is expressed in terms of the ordinary write helpers, so restoring
+  goes through the same paths as the original, sequential fallbacks and import
+  progress included, rather than a second and less careful copy.
+- A write with no honest inverse records nothing rather than offering an undo
+  that fails when reached for.
+- The history outlives the toast. The toast is an offer with a timer; the stack
+  is what `Cmd+Z` walks back through, and writes an undo makes are not recorded,
+  so undo never turns into redo. A destructive write's offer does not expire.
 
 ## Persistence boundary
 
