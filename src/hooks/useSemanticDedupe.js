@@ -10,6 +10,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
+import { contained } from "../llm/containment.js";
 import { createLLM, LLM_PROVIDERS } from "../llm/index.js";
 import {
   findNearDuplicateCandidates,
@@ -20,15 +21,17 @@ import {
 const NOTHING = Object.freeze({ ids: [], reasons: [] });
 
 /**
- * Titles and URLs are untrusted input — a bookmark can be named anything at all —
- * so each pair goes inside <bookmark_data>, with the same preamble the rest of the
- * app uses, and the model is asked for a fixed shape rather than prose.
+ * Titles and URLs are untrusted input — a bookmark can be named anything at all,
+ * an import can carry anything — so each pair goes inside <bookmark_data>, with
+ * the same preamble the rest of the app uses, and every value through `contained`
+ * so a title cannot end the section it is quoted in. The model is asked for a
+ * fixed shape rather than prose.
  */
 const promptFor = (pairs) => {
   const described = pairs
     .map(
       ({ a, b }, index) =>
-        `${index}:\n  A title: <bookmark_data>${a.title || ""}</bookmark_data>\n  A url: <bookmark_data>${a.url || ""}</bookmark_data>\n  B title: <bookmark_data>${b.title || ""}</bookmark_data>\n  B url: <bookmark_data>${b.url || ""}</bookmark_data>`
+        `${index}:\n  A title: <bookmark_data>${contained(a.title)}</bookmark_data>\n  A url: <bookmark_data>${contained(a.url)}</bookmark_data>\n  B title: <bookmark_data>${contained(b.title)}</bookmark_data>\n  B url: <bookmark_data>${contained(b.url)}</bookmark_data>`
     )
     .join("\n");
 
