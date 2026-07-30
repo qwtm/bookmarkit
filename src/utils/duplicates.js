@@ -1,23 +1,47 @@
 // ARCH-06: Duplicate detection extracted from BookmarkApp.jsx — pure function, no React deps.
 
-export const getDuplicateKey = (bookmark) =>
-  `${(bookmark.title || "").trim().toLowerCase()}|${(bookmark.url || "").trim().toLowerCase()}`;
+import { normalizeUrl } from "./url.js";
 
 /**
- * Returns IDs of duplicate bookmarks (same title+url, case-insensitive).
- * The first occurrence is kept; subsequent occurrences are returned as duplicates.
+ * #45: Two bookmarks are the same when they point at the same page, regardless
+ * of title — the same article saved twice usually differs in title, and the
+ * title is the field a user edits. Bookmarks with no URL fall back to their
+ * title so they do not all collide on the empty key.
+ */
+export const getDuplicateKey = (bookmark) => {
+  const url = normalizeUrl(bookmark?.url);
+  return url || `title:${(bookmark?.title || "").trim().toLowerCase()}`;
+};
+
+// #45: How much a copy is worth keeping. Deleting the annotated copy and keeping
+// the bare one loses work that cannot be recovered from the other bookmark.
+const metadataWeight = (bookmark) =>
+  (bookmark?.tags?.length ? 1 : 0) +
+  (bookmark?.rating ? 1 : 0) +
+  (bookmark?.description?.trim() ? 1 : 0);
+
+/**
+ * Returns IDs of duplicate bookmarks — every copy except the one worth keeping.
+ * The copy carrying the most metadata wins; ties keep the earliest occurrence.
  * @param {Array} list
  * @returns {string[]}
  */
-export const findDuplicateIds = (list) => {
-  const seen = new Map();
-  const dups = [];
-  for (const b of list) {
-    const key = getDuplicateKey(b);
-    if (seen.has(key)) dups.push(b.id);
-    else seen.set(key, b.id);
+export const findDuplicateIds = (list = []) => {
+  const keeping = new Map();
+  const duplicates = [];
+  for (const bookmark of list) {
+    const key = getDuplicateKey(bookmark);
+    const kept = keeping.get(key);
+    if (!kept) {
+      keeping.set(key, bookmark);
+    } else if (metadataWeight(bookmark) > metadataWeight(kept)) {
+      keeping.set(key, bookmark);
+      duplicates.push(kept.id);
+    } else {
+      duplicates.push(bookmark.id);
+    }
   }
-  return dups;
+  return duplicates;
 };
 
 /**
