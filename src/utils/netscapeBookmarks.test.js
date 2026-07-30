@@ -91,6 +91,96 @@ describe("parseNetscapeHtml (#40)", () => {
     expect(parsed[0]).toMatchObject({ tags: [], rating: 0, folderId: "" });
     expect(parsed[0].createdAt).toEqual(expect.any(String));
   });
+
+  it("reads ADD_DATE as seconds and ignores one it cannot hold", () => {
+    const [dated] = parseNetscapeHtml('<DT><A HREF="https://a.test/" ADD_DATE="1704164645">A</A>');
+    expect(dated.createdAt).toBe("2024-01-02T03:04:05.000Z");
+
+    for (const addDate of ["", "tuesday", "999999999999999999"]) {
+      const [parsed] = parseNetscapeHtml(
+        `<DT><A HREF="https://a.test/" ADD_DATE="${addDate}">A</A>`
+      );
+      expect(Number.isNaN(new Date(parsed.createdAt).getTime())).toBe(false);
+    }
+  });
+
+  it("skips an anchor with no address", () => {
+    expect(parseNetscapeHtml('<DT><A NAME="anchor">Not a bookmark</A>')).toEqual([]);
+  });
+});
+
+// Browsers write these files with escaped fields and the odd wrapping tag, and
+// they are not consistent about letter case or quoting.
+describe("parseNetscapeHtml on what browsers actually write", () => {
+  it("undoes the escaping the writer applied", () => {
+    const [parsed] = parseNetscapeHtml(
+      '<DT><A HREF="https://a.test/?a=1&amp;b=2" DESCRIPTION="d&amp;d &lt;b&gt;">Ti&quot;tle</A>'
+    );
+
+    expect(parsed).toMatchObject({
+      url: "https://a.test/?a=1&b=2",
+      description: "d&d <b>",
+      title: 'Ti"tle',
+    });
+  });
+
+  it("decodes numeric character references", () => {
+    const [parsed] = parseNetscapeHtml('<DT><A HREF="https://a.test/">caf&#233;&#x20AC;</A>');
+
+    expect(parsed.title).toBe("café€");
+  });
+
+  it("leaves an entity it does not know as written", () => {
+    const [parsed] = parseNetscapeHtml('<DT><A HREF="https://a.test/">A &weird; B</A>');
+
+    expect(parsed.title).toBe("A &weird; B");
+  });
+
+  it("reads lowercase tags, single quotes, and unquoted values", () => {
+    const parsed = parseNetscapeHtml(
+      "<dl><p>" +
+        "<dt><h3>Work</h3>" +
+        "<dl><p><dt><a href='https://a.test/' rating=5>A</a></dl><p>" +
+        "</dl><p>"
+    );
+
+    expect(parsed[0]).toMatchObject({ folderId: "Work", rating: 5 });
+  });
+
+  it("takes only the text from a label or title wrapped in markup", () => {
+    const parsed = parseNetscapeHtml(
+      "<DL><p><DT><H3><B>Work</B> notes</H3>" +
+        '<DL><p><DT><A HREF="https://a.test/">A <B>bold</B>\n  title</A></DL><p></DL><p>'
+    );
+
+    expect(parsed[0]).toMatchObject({ folderId: "Work notes", title: "A bold title" });
+  });
+
+  it("keeps sibling folders apart", () => {
+    const parsed = parseNetscapeHtml(
+      "<DL><p>" +
+        '<DT><H3>Work</H3><DL><p><DT><A HREF="https://work.test/">W</A></DL><p>' +
+        '<DT><H3>Home</H3><DL><p><DT><A HREF="https://home.test/">H</A></DL><p>' +
+        '<DT><A HREF="https://root.test/">R</A>' +
+        "</DL><p>"
+    );
+
+    expect(parsed.map((b) => b.folderId)).toEqual(["Work", "Home", ""]);
+  });
+
+  it("ignores a folder with no name", () => {
+    const parsed = parseNetscapeHtml(
+      '<DL><p><DT><H3></H3><DL><p><DT><A HREF="https://a.test/">A</A></DL><p></DL><p>'
+    );
+
+    expect(parsed[0].folderId).toBe("");
+  });
+
+  it("returns nothing for input that holds no bookmarks", () => {
+    for (const html of ["", null, undefined, "<html><body>nothing here</body></html>"]) {
+      expect(parseNetscapeHtml(html)).toEqual([]);
+    }
+  });
 });
 
 // A JSON import writes tags through as the file gave them, so a stored bookmark

@@ -6,6 +6,9 @@
 // followed by a sibling <DL> — and maps to the app's slash-separated folderId
 // path. TAGS is the attribute Firefox exports; RATING is a Bookmarkit addition
 // that other browsers ignore.
+//
+// Neither direction touches the DOM: the writer builds a string and the reader
+// scans one. See the note above TOKEN for why the reader does not parse.
 
 import { escapeHtml } from "./url.js";
 
@@ -105,21 +108,71 @@ export function generateNetscapeHtml(bookmarks) {
   );
 }
 
-// Walk out through the enclosing <DL> elements, collecting the <H3> label that
-// introduces each one. The HTML parser nests a folder's <DL> inside the <DT>
-// that holds its <H3>, so the label is that <DL>'s previous element sibling.
-function folderPathFor(link) {
-  const segments = [];
-  let list = link.closest("dl");
-  while (list) {
-    const label = list.previousElementSibling;
-    if (label?.tagName === "H3") {
-      const title = label.textContent.replace(/\s+/gu, " ").trim();
-      if (title) segments.unshift(title);
-    }
-    list = list.parentElement?.closest("dl");
+// The reader scans the file's text rather than parsing it into a document. A
+// bookmark file is a generated, shallow structure that does not need a full HTML
+// parser, and staying DOM-free buys two things: the module works in the MV3
+// service worker, which has no DOMParser, and untrusted file text never reaches
+// an HTML parser at all. Attribute values in a bookmark file are escaped, so an
+// attribute list ends at the first ">".
+const TOKEN =
+  /(?<open><dl\b[^>]*>)|(?<close><\/dl\s*>)|<h3\b[^>]*>(?<folder>[\s\S]*?)<\/h3\s*>|<a\b(?<attributes>[^>]*)>(?<title>[\s\S]*?)<\/a\s*>/giu;
+
+const ATTRIBUTE = /([a-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/giu;
+
+const NAMED_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0" };
+const MAX_CODE_POINT = 0x10ffff;
+
+// The writer escapes with escapeHtml, and browsers escape too, so reading a
+// field means undoing that. An entity we do not recognise is left as written
+// rather than guessed at.
+function decodeEntities(value) {
+  return String(value ?? "").replace(/&(#[Xx]?[0-9A-Fa-f]+|[A-Za-z]+);/gu, (entity, body) => {
+    if (body[0] !== "#") return NAMED_ENTITIES[body.toLowerCase()] ?? entity;
+    const hex = body[1] === "x" || body[1] === "X";
+    const code = parseInt(hex ? body.slice(2) : body.slice(1), hex ? 16 : 10);
+    return code > 0 && code <= MAX_CODE_POINT ? String.fromCodePoint(code) : entity;
+  });
+}
+
+// A label or a link's text can carry markup — browsers wrap parts in <B> — and
+// only the text is a title.
+function plainText(value) {
+  return decodeEntities(String(value ?? "").replace(/<[^>]*>/gu, ""))
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function attributesOf(tag) {
+  const attributes = new Map();
+  for (const [, name, quoted, single, bare] of tag.matchAll(ATTRIBUTE)) {
+    attributes.set(name.toLowerCase(), decodeEntities(quoted ?? single ?? bare));
   }
-  return segments.join("/");
+  return attributes;
+}
+
+// Inverse of toUnixSeconds. A value outside the range a Date can hold counts as
+// missing rather than throwing on toISOString.
+function fromUnixSeconds(value, fallback) {
+  const ms = parseInt(value, 10) * 1000;
+  return Number.isNaN(ms) || Math.abs(ms) > 8.64e15 ? fallback : new Date(ms).toISOString();
+}
+
+function readAnchor(tag, text, folderPath, now) {
+  const attributes = attributesOf(tag);
+  const url = attributes.get("href") || "";
+  if (!url) return null;
+  const rating = parseInt(attributes.get("rating"), 10);
+  return {
+    title: text || url,
+    url,
+    description: attributes.get("description") || "",
+    tags: parseTags(attributes.get("tags")),
+    rating: Number.isNaN(rating) ? 0 : rating,
+    folderId: folderPath.filter(Boolean).join("/"),
+    faviconUrl: attributes.get("icon") || "",
+    createdAt: fromUnixSeconds(attributes.get("add_date"), now),
+    updatedAt: now,
+  };
 }
 
 /**
@@ -129,21 +182,27 @@ function folderPathFor(link) {
  * @returns {Array<object>}
  */
 export function parseNetscapeHtml(html) {
-  const doc = new DOMParser().parseFromString(String(html ?? ""), "text/html");
   const now = new Date().toISOString();
-  return Array.from(doc.querySelectorAll("a[href]")).map((link) => {
-    const addDate = parseInt(link.getAttribute("add_date"), 10);
-    const rating = parseInt(link.getAttribute("rating"), 10);
-    return {
-      title: link.textContent.trim() || link.href,
-      url: link.href,
-      description: link.getAttribute("description") || "",
-      tags: parseTags(link.getAttribute("tags")),
-      rating: Number.isNaN(rating) ? 0 : rating,
-      folderId: folderPathFor(link),
-      faviconUrl: link.getAttribute("icon") || "",
-      createdAt: Number.isNaN(addDate) ? now : new Date(addDate * 1000).toISOString(),
-      updatedAt: now,
-    };
-  });
+  const bookmarks = [];
+  // One entry per open <DL>, holding the <H3> that introduced it. The outermost
+  // list has no label, so it contributes an empty segment.
+  const folderPath = [];
+  let pendingLabel = "";
+
+  for (const { groups } of String(html ?? "").matchAll(TOKEN)) {
+    if (groups.folder !== undefined) {
+      pendingLabel = plainText(groups.folder);
+    } else if (groups.open) {
+      folderPath.push(pendingLabel);
+      pendingLabel = "";
+    } else if (groups.close) {
+      folderPath.pop();
+    } else {
+      pendingLabel = "";
+      const bookmark = readAnchor(groups.attributes, plainText(groups.title), folderPath, now);
+      if (bookmark) bookmarks.push(bookmark);
+    }
+  }
+
+  return bookmarks;
 }
