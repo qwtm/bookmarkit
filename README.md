@@ -244,6 +244,10 @@ Bookmark JSON shape (id is optional on import):
     folder paths, so exporting and re-importing keeps your folder structure
   - Tags and rating travel in `TAGS` and `RATING` attributes. Other browsers
     ignore `RATING`; Firefox understands `TAGS`
+- Imported folders are created in your real bookmark tree, so `chrome://bookmarks` and your synced
+  devices see the same structure Bookmarkit shows
+- Replacing all bookmarks writes the new set before removing the old one. If any bookmark cannot be
+  written, nothing is replaced and your existing collection is left as it was.
 
 ## Natural language commands (examples)
 
