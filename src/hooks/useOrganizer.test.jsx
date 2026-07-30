@@ -4,9 +4,11 @@ import { render, act, waitFor } from "@testing-library/react";
 
 const generate = vi.fn();
 
-vi.mock("../llm/index.js", () => ({
+// Only the call is faked. Which providers count as usable is real behavior this
+// hook depends on, so it is not worth restating in a mock.
+vi.mock("../llm/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   createLLM: vi.fn(() => ({ generate })),
-  LLM_PROVIDERS: { GEMINI: "gemini" },
 }));
 
 const { useOrganizer } = await import("./useOrganizer.js");
@@ -140,6 +142,19 @@ describe("useOrganizer (#44)", () => {
 
     expect(rows).toEqual([]);
     expect(createLLM).not.toHaveBeenCalled();
+    expect(showMessage).toHaveBeenCalledWith(expect.stringContaining("provider"), "info");
+  });
+
+  // A provider name is not consent: organizing sends titles and descriptions.
+  it("asks nothing when the configured provider has no key", async () => {
+    const showMessage = vi.fn();
+    setup({ providerOptions: {}, showMessage });
+
+    await act(async () => {
+      await organizer.run([bookmark("1")]);
+    });
+
+    expect(generate).not.toHaveBeenCalled();
     expect(showMessage).toHaveBeenCalledWith(expect.stringContaining("provider"), "info");
   });
 

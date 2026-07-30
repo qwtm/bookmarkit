@@ -13,7 +13,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { contained } from "../llm/containment.js";
 import { classifyLLMError } from "../llm/errors.js";
-import { createLLM, LLM_PROVIDERS } from "../llm/index.js";
+import { createLLM, isProviderReady, LLM_PROVIDERS } from "../llm/index.js";
 import {
   chunkForOrganize,
   existingFolders,
@@ -103,7 +103,8 @@ export function useOrganizer({ provider, providerOptions, locked, showMessage })
     const chosen =
       provider || (typeof __llm_provider__ !== "undefined" && __llm_provider__) || null;
 
-    const refusal = refuseReason({ locked, chosen });
+    const options = optionsFor(providerOptions);
+    const refusal = refuseReason({ locked, chosen, options });
     if (refusal) {
       showMessage?.(refusal, "info");
       return [];
@@ -117,7 +118,7 @@ export function useOrganizer({ provider, providerOptions, locked, showMessage })
 
     const rows = [];
     try {
-      const llm = createLLM(chosen || LLM_PROVIDERS.GEMINI, optionsFor(providerOptions));
+      const llm = createLLM(chosen || LLM_PROVIDERS.GEMINI, options);
       for (const chunk of chunks) {
         if (!runningRef.current) break;
         const { rows: slice, fatal } = await askSlice(llm, chunk, folders, fields);
@@ -156,12 +157,21 @@ async function askSlice(llm, chunk, folders, fields) {
   }
 }
 
-/** Why this cannot be asked at all, or null when it can. */
-const refuseReason = ({ locked, chosen }) => {
+/**
+ * Why this cannot be asked at all, or null when it can.
+ *
+ * A provider name is not enough: `gemini` is the default before anything is
+ * configured, and organizing sends the collection's titles and descriptions
+ * somewhere, so an unusable provider must stop the run before the first request
+ * rather than fail it afterwards.
+ */
+const refuseReason = ({ locked, chosen, options }) => {
   if (locked) {
     return "Your API key is encrypted. Open Options and enter your passphrase to unlock it for this session.";
   }
-  if (!chosen) return "Organizing needs an LLM provider. Open Options to configure one.";
+  if (!isProviderReady(chosen, options)) {
+    return "Organizing needs an LLM provider. Open Options to configure one.";
+  }
   return null;
 };
 
