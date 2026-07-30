@@ -346,6 +346,13 @@ walks. `chromeBookmarksStore` ignores the events its own writes echo back and
 coalesces bursts it did not cause. Anything added to a store must keep that
 property: one write, one notification, whatever its size.
 
+An empty list means the user has no bookmarks. A store must never emit one to
+mean "I could not read them": the app cannot tell the difference, and a save made
+from that view is made against nothing. A store that fails before it is usable
+rejects `init()`; one that fails afterwards keeps the last list it emitted and
+reports through the optional `onError` option, which `useBookmarkStore` turns
+into a message. Either way the failure is visible.
+
 A few contract methods are optional, `updateMany` among them: a store implements
 it when it can write a whole selection in one round-trip, as Firestore can with a
 batch, and callers fall back to writing one bookmark at a time. The fallback is

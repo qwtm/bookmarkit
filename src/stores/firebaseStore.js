@@ -22,7 +22,13 @@ import {
 } from "firebase/firestore";
 import { chunk, MAX_FIRESTORE_BATCH_OPS } from "./batching.js";
 
-export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken }) {
+/**
+ * @param {object} options
+ * @param {(error: Error) => void} [options.onError] Reports a failure that
+ *   happens after init has resolved — a dropped subscription, say — which has no
+ *   call to reject.
+ */
+export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken, onError }) {
   let listeners = new Set();
   let unsubSnapshot = null;
   let unsubAuth = null;
@@ -52,25 +58,46 @@ export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken })
       const app = initializeApp(firebaseConfig);
       auth = getAuth(app);
       db = getFirestore(app);
-      await new Promise((resolve) => {
-        // #19: Kept in unsubAuth rather than a local, because the sign-in failure
-        // path resolves without ever seeing a user and would leak this listener.
-        unsubAuth = onAuthStateChanged(auth, async (user) => {
-          if (user) {
-            userId = user.uid;
-            unsubAuth?.();
-            unsubAuth = null;
-            resolve();
-          } else {
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        // #18: Sign-in failure used to resolve with userId still null, and every
+        // later call then built the path artifacts/<appId>/users/null/bookmarks
+        // and threw. Fail init instead, so the caller can say what happened.
+        //
+        // #19: the listener lives in unsubAuth rather than a local, because both
+        // ways of settling leave init without ever seeing a user, and a teardown
+        // that could not reach it would leak it.
+        const settle = (error) => {
+          if (settled) return;
+          settled = true;
+          unsubAuth?.();
+          unsubAuth = null;
+          if (error) reject(new Error(`Firebase sign-in failed: ${error?.message || error}`));
+          else resolve();
+        };
+        unsubAuth = onAuthStateChanged(
+          auth,
+          async (user) => {
+            if (user) {
+              userId = user.uid;
+              settle();
+              return;
+            }
             try {
               if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
               else await signInAnonymously(auth);
-            } catch {
-              // retry or resolve anyway
-              resolve();
+              // Success re-enters this callback with a user.
+            } catch (error) {
+              settle(error);
             }
-          }
-        });
+          },
+          settle
+        );
+        // The observer may have fired before the unsubscribe existed.
+        if (settled) {
+          unsubAuth?.();
+          unsubAuth = null;
+        }
       });
       // PERF-04: Enable offline persistence so the app works without network on startup.
       // Requires composite index: position ASC, title ASC (see src/stores/FIREBASE_SETUP.md).
@@ -94,8 +121,11 @@ export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken })
         },
         (error) => {
           // PERF-04: Handle subscription errors (e.g., expired auth token, changed rules)
+          // #18: Emitting [] here made every bookmark look deleted, and a save
+          // from that view would have been made against an empty list. Keep the
+          // last list subscribers received and report the failure instead.
           console.error("Firestore snapshot subscription error:", error);
-          notify([]);
+          onError?.(error);
         }
       );
     },
