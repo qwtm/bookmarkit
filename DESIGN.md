@@ -38,6 +38,7 @@ and tested without a UI:
 | `useAgentEngine`          | One agent request: rate limiting, cancellation, discarding superseded replies, parsing, and error classification. |
 | `useBookmarkSelection`    | Which bookmarks are selected, and the pointer and key gestures that change that.                                  |
 | `useKeyboardShortcuts`    | App-level shortcuts, suspended while a dialog is open.                                                            |
+| `useSmartViews`           | Saved views: reading them from storage, and writing the list back.                                                |
 | `useUndoHistory`          | The undo stack and the toast offering its newest entry.                                                           |
 | `useTheme`, `useDebounce` | Theme selection; debounced values.                                                                                |
 
@@ -66,6 +67,19 @@ store bookmarks
 Manual sorting runs last and intentionally overrides an agent sort. Clearing
 manual filters does not clear the agent plan, and clearing agent search does
 not clear manual filters.
+
+A saved view (#49) is a name over both inputs to that projection, which is why it
+is persistence rather than a feature: `utils/smartViews.js` holds what a view is,
+`useSmartViews` holds where it lives, and applying one just sets the plan and the
+filters. Views are read back as untrusted input — a stored plan is re-serialized
+through `parseAgentResponse` so it faces the same action whitelist a model's
+answer does, and an unknown action cannot reach `applyAgentPlan` by way of
+storage. Which view is active is derived by comparing the screen to the saved
+ones, so editing a filter afterwards visibly leaves it.
+
+Anything persisted goes through `utils/extensionStorage.js`, which knows the one
+thing callers should not have to: `chrome.storage.local` in the extension,
+`localStorage` in the web build, and never `chrome.storage.sync`.
 
 Keyboard behavior has one owner at a time. The `Modal` wrapper in
 `DesignSystem.jsx` gives every dialog the same contract — focus moves in on

@@ -9,6 +9,7 @@ import {
   hasActiveFilters,
 } from "../utils/manualFilters.js";
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
+import { isViewWorthSaving, matchingViewId } from "../utils/smartViews.js";
 import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { remoteFaviconsEnabled, setRemoteFaviconsEnabled } from "../utils/favicon.js";
@@ -19,6 +20,7 @@ import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useLLMSettings } from "../hooks/useLLMSettings.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useDebounce } from "../hooks/useDebounce.js";
+import { useSmartViews } from "../hooks/useSmartViews.js";
 import { useUndoHistory } from "../hooks/useUndoHistory.js";
 
 import ErrorBoundary from "./ErrorBoundary.jsx";
@@ -30,6 +32,7 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import OptionsModal from "./OptionsModal";
 import BookmarkList from "./BookmarkList.jsx";
 import BulkEditBar from "./BulkEditBar.jsx";
+import SmartViewBar from "./SmartViewBar.jsx";
 import { AgentPlan, Button, IconButton, Kbd, Modal, SearchBar, Toast } from "./DesignSystem.jsx";
 
 // Plan steps that write a new order to the store, rather than sorting the view.
@@ -111,6 +114,9 @@ const BookmarkApp = () => {
   const [messageModalContent, setMessageModalContent] = useState({ message: "", type: "info" });
   // #53: manual filter state, independent of the agent plan so neither clobbers the other.
   const [manualFilters, setManualFilters] = useState(EMPTY_FILTERS);
+
+  // #49: saved views name what is on screen — the plan and the filters together.
+  const { views, save: saveView, forget: forgetView } = useSmartViews();
 
   // #11: only http(s) URLs open — javascript: and data: are refused out loud
   // rather than silently ignored.
@@ -219,6 +225,30 @@ const BookmarkApp = () => {
         b.unreachable ? { ...b, urlStatus: "invalid" } : b
       ),
     [plannedBookmarks, effectiveFilters]
+  );
+
+  // #49: A view is "active" when the screen matches it, rather than because it was
+  // the last one clicked — editing a filter afterwards should visibly leave it.
+  const activeViewId = useMemo(
+    () => matchingViewId(views, lastAction, manualFilters),
+    [views, lastAction, manualFilters]
+  );
+
+  const applyView = useCallback((view) => {
+    setLastAction(view.plan.length > 0 ? view.plan : null);
+    setManualFilters(view.filters);
+    setSearchQuery("");
+  }, []);
+
+  const handleSaveView = useCallback(
+    (name) => {
+      if (!saveView(name, lastAction, manualFilters)) {
+        showCustomMessage("There's nothing to save — search or filter something first.", "info");
+        return false;
+      }
+      return true;
+    },
+    [saveView, lastAction, manualFilters]
   );
 
   // ─── Message helper ──────────────────────────────────────────────────────────
@@ -688,6 +718,15 @@ const BookmarkApp = () => {
               <AgentPlan steps={lastAction} error={lastAction.action === "error"} />
             </div>
           )}
+
+          <SmartViewBar
+            views={views}
+            activeViewId={activeViewId}
+            canSave={isViewWorthSaving(lastAction, manualFilters)}
+            onApply={applyView}
+            onSave={handleSaveView}
+            onForget={forgetView}
+          />
 
           {/* #54: Only for a real multi-selection — a single click is served by the form. */}
           {multiSelectedBookmarkIds.length > 0 && (

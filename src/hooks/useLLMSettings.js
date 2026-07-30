@@ -15,6 +15,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LLM_PROVIDERS } from "../llm/index.js";
 import { decryptString, encryptString, isEncryptedBlob } from "../utils/keyCrypto.js";
+import {
+  adoptLegacyLocalStorage,
+  dropSetting,
+  readSetting,
+  writeSetting,
+} from "../utils/extensionStorage.js";
 
 const PROVIDER_KEY = "bm_runtime_llm_provider";
 const OPTIONS_KEY = "bm_runtime_llm_options";
@@ -26,49 +32,12 @@ const buildDefaultProvider = () => {
   return (configured || LLM_PROVIDERS.GEMINI).toString().toLowerCase();
 };
 
-/** chrome.storage.local when running as the extension, localStorage otherwise. */
-const localArea = () =>
-  typeof chrome !== "undefined" && chrome.storage?.local ? chrome.storage.local : null;
-
-const readSetting = async (key) => {
-  try {
-    const area = localArea();
-    if (!area) return localStorage.getItem(key);
-    const result = await area.get([key]);
-    return result[key];
-  } catch {
-    return undefined;
-  }
-};
-
-/** #36: reports whether the write landed, so a caller can keep its fallback. */
-const writeSetting = async (key, value) => {
-  try {
-    const area = localArea();
-    if (area) await area.set({ [key]: value });
-    else localStorage.setItem(key, value);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const dropSetting = async (key) => {
-  try {
-    const area = localArea();
-    if (area) await area.remove(key);
-    else localStorage.removeItem(key);
-  } catch {
-    /* nothing to drop */
-  }
-};
-
 /**
  * #9: move any secrets a prior version wrote to chrome.storage.sync into
  * device-local storage, then delete them from sync so they stop replicating.
  */
 const migrateOutOfSync = async () => {
-  const area = localArea();
+  const area = typeof chrome !== "undefined" ? chrome.storage?.local : null;
   if (!area || !chrome.storage?.sync) return;
   try {
     const synced = await chrome.storage.sync.get([PROVIDER_KEY, OPTIONS_KEY]);
@@ -81,19 +50,6 @@ const migrateOutOfSync = async () => {
   } catch {
     /* sync unavailable — nothing to migrate */
   }
-};
-
-/**
- * Settings written to localStorage by the pre-extension web build, moved into
- * the extension's own storage the first time it sees them.
- */
-const adoptLegacyLocalStorage = async (key) => {
-  if (!localArea()) return undefined;
-  const legacy = localStorage.getItem(key);
-  if (!legacy) return undefined;
-  await writeSetting(key, legacy);
-  localStorage.removeItem(key);
-  return legacy;
 };
 
 const parseOptions = (raw) => {

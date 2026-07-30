@@ -20,6 +20,24 @@ export const EMPTY_FILTERS = Object.freeze({
   order: "asc",
 });
 
+/**
+ * The fields a manual sort can order by, with the labels the controls show.
+ * Kept with the filter semantics rather than in the bar, because a saved view
+ * (#49) has to know which values are real when reading one back from storage,
+ * and two lists would drift.
+ */
+export const SORT_FIELDS = Object.freeze([
+  { value: "", label: "Default order" },
+  { value: "title", label: "Title" },
+  { value: "url", label: "URL" },
+  { value: "rating", label: "Rating" },
+  { value: "folderId", label: "Folder" },
+  { value: "createdAt", label: "Date added" },
+  { value: "updatedAt", label: "Date modified" },
+]);
+
+export const isSortableField = (value) => SORT_FIELDS.some((field) => field.value === value);
+
 // Tag chips cycle through three states rather than offering separate include/exclude
 // controls: unset → include → exclude → unset.
 export const TAG_STATE = { OFF: "off", INCLUDE: "include", EXCLUDE: "exclude" };
