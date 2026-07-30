@@ -1,6 +1,33 @@
 import React, { useMemo, useState } from "react";
 import { generateNetscapeHtml, parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
+import { readImportedBookmarks } from "../utils/importedBookmarks.js";
 import { Button, Tabs, Textarea } from "./DesignSystem.jsx";
+
+/**
+ * #25: Read the chosen file and clear the input. Without the reset the browser
+ * fires no change event when the same file is picked again, so a failed import
+ * could not be retried without picking a different file first.
+ * @returns {Promise<string|null>} the file's text, or null if nothing was chosen
+ */
+const readChosenFile = (event) =>
+  new Promise((resolve, reject) => {
+    const [file] = event.target.files;
+    event.target.value = "";
+    if (!file) {
+      resolve(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("The file could not be read."));
+    reader.readAsText(file);
+  });
+
+// How many entries an import will actually add, and what it had to leave behind.
+const describeRejected = (rejectedCount) =>
+  rejectedCount > 0
+    ? ` Skipping ${rejectedCount} entr${rejectedCount === 1 ? "y" : "ies"} without a usable http(s) URL.`
+    : "";
 
 // UX-03: Memoize JSON/HTML export strings and data URIs to prevent recomputing on every render.
 // UX-04: Add confirmation step before import with append vs replace option.
@@ -29,18 +56,36 @@ const ImportExportContent = ({ bookmarks, onClose, onImportJson, onImportHtml, s
     [htmlExport]
   );
 
+  /**
+   * #25: Validate before confirming, not after. The array's raw length used to be
+   * the number shown, so an import of 100 entries where 40 had no usable URL
+   * still promised 100 bookmarks and then quietly added 60.
+   */
+  const stageJsonImport = (text) => {
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed)) {
+      showMessage("Invalid JSON format. Expected an array of bookmarks.", "error");
+      return;
+    }
+    const { bookmarks: importable, rejectedCount } = readImportedBookmarks(parsed);
+    if (importable.length === 0) {
+      showMessage(
+        `No bookmarks to import.${describeRejected(rejectedCount) || " The array was empty."}`,
+        "error"
+      );
+      return;
+    }
+    if (rejectedCount > 0) showMessage(describeRejected(rejectedCount).trim(), "info");
+    setPendingImport({ type: "json", data: importable, count: importable.length });
+  };
+
   // UX-04: Show confirmation instead of immediately importing
   const requestJsonImport = () => {
     // UX-03: Wrap JSON.parse in setTimeout to yield to the event loop for large payloads
     setIsParsing(true);
     setTimeout(() => {
       try {
-        const parsed = JSON.parse(importJsonText);
-        if (Array.isArray(parsed)) {
-          setPendingImport({ type: "json", data: parsed, count: parsed.length });
-        } else {
-          showMessage("Invalid JSON format. Expected an array of bookmarks.", "error");
-        }
+        stageJsonImport(importJsonText);
       } catch {
         showMessage("Error parsing JSON. Please ensure it is valid JSON.", "error");
       } finally {
@@ -222,32 +267,14 @@ const ImportExportContent = ({ bookmarks, onClose, onImportJson, onImportHtml, s
                 type="file"
                 accept=".json"
                 onChange={async (e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = async (event) => {
-                      try {
-                        const importedData = JSON.parse(event.target.result);
-                        if (Array.isArray(importedData)) {
-                          setPendingImport({
-                            type: "json",
-                            data: importedData,
-                            count: importedData.length,
-                          });
-                        } else {
-                          showMessage(
-                            "Invalid JSON format in file. Expected an array of bookmarks.",
-                            "error"
-                          );
-                        }
-                      } catch {
-                        showMessage(
-                          "Error parsing JSON file. Please ensure it is valid JSON.",
-                          "error"
-                        );
-                      }
-                    };
-                    reader.readAsText(file);
+                  try {
+                    const text = await readChosenFile(e);
+                    if (text !== null) stageJsonImport(text);
+                  } catch {
+                    showMessage(
+                      "Error parsing JSON file. Please ensure it is valid JSON.",
+                      "error"
+                    );
                   }
                 }}
                 className="block w-full text-sm text-secondary-text file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-secondary-bg file:text-accent hover:file:bg-primary-bg focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
@@ -288,18 +315,18 @@ const ImportExportContent = ({ bookmarks, onClose, onImportJson, onImportHtml, s
                 type="file"
                 accept=".html,.htm"
                 onChange={async (e) => {
-                  const file = e.target.files[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = async (event) => {
-                      const html = event.target.result;
-                      setPendingImport({
-                        type: "html",
-                        data: html,
-                        count: parseNetscapeHtml(html).length,
-                      });
-                    };
-                    reader.readAsText(file);
+                  try {
+                    const text = await readChosenFile(e);
+                    if (text === null) return;
+                    // #40: what the reader will actually find, rather than a count
+                    // of <DT> rows — a folder is a <DT> too.
+                    setPendingImport({
+                      type: "html",
+                      data: text,
+                      count: parseNetscapeHtml(text).length,
+                    });
+                  } catch {
+                    showMessage("The HTML file could not be read. Please try again.", "error");
                   }
                 }}
                 className="block w-full text-sm text-secondary-text file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-secondary-bg file:text-accent hover:file:bg-primary-bg focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"

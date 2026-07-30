@@ -15,6 +15,7 @@ import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js
 import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { remoteFaviconsEnabled, setRemoteFaviconsEnabled } from "../utils/favicon.js";
+import { readImportedBookmarks } from "../utils/importedBookmarks.js";
 import { encryptString, decryptString, isEncryptedBlob } from "../utils/keyCrypto.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useTheme } from "../hooks/useTheme.js";
@@ -861,10 +862,10 @@ const BookmarkApp = () => {
   const handleImportJson = useCallback(
     async (arr, replaceAll = false) => {
       const existing = replaceAll ? [] : bookmarks;
-      // #11: only import entries with a safe http(s) URL.
-      const safe = (Array.isArray(arr) ? arr : []).filter(
-        (b) => b && typeof b === "object" && isSafeHttpUrl(b.url)
-      );
+      // #25: The dialog already ran the array through readImportedBookmarks, but
+      // this is the store-facing edge, so it validates rather than assuming.
+      // #11 lives there too: only entries with a safe http(s) URL survive.
+      const { bookmarks: safe } = readImportedBookmarks(arr);
       const { bookmarks: bookmarksToImport, skippedCount } = filterDuplicateImports(safe, existing);
 
       if (replaceAll) {
