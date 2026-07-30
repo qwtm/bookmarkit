@@ -27,6 +27,8 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
   - Multi‑select (Cmd/Ctrl+Click), open in new tab (Shift+Click)
   - Detect and remove duplicates by the page they point at, with an optional
     second opinion from your LLM on the same article saved under two URLs
+  - Undo the last ten changes with Cmd/Ctrl+Z — edits, adds, deletes, imports,
+    de‑duplication, sorts, and “replace all”
 - URL status
   - Lightweight validity check via HEAD request from the extension service worker
   - One‑click “Ignore checking” toggle per bookmark
@@ -290,6 +292,21 @@ before.
 - Cmd/Ctrl+A: select all visible
 - Cmd/Ctrl+D or D: delete selected (with confirmation)
 - Space (on focused tile): select/open depending on context
+- Cmd/Ctrl+Z: undo the last change
+
+## Undo
+
+Every change to your bookmarks can be taken back, up to the last ten. A toast
+offers the newest one for a few seconds; Cmd/Ctrl+Z reaches back through the
+rest, whether or not their toasts are still showing.
+
+- Deletes and “replace all” (a JSON import that overwrites, for example) keep
+  their toast until you use or dismiss it, since a timeout is no safety net for
+  losing a whole collection.
+- Undoing a delete or an overwrite restores the bookmarks with their tags,
+  ratings, folders, and notes, not just their titles and URLs.
+- Undo history lives in the page. Closing or reloading the app clears it, and it
+  is not offered in the quick‑add popup, which closes as soon as it saves.
 
 ## URL validation
 
