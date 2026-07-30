@@ -81,6 +81,42 @@ describe("StarRating radiogroup (#24)", () => {
   });
 });
 
+// A JSON import writes through whatever the file said, so the rating a bookmark
+// carries is not guaranteed to be a number. If the comparisons disagree with the
+// fill, the control looks rated but has no tab stop, and cannot be corrected.
+describe("StarRating with a loosely typed rating (#24)", () => {
+  it("treats a numeric string like the number", () => {
+    render(<StarRating value="3" onChange={vi.fn()} />);
+    expect(stars().map((star) => star.tabIndex)).toEqual([-1, -1, 0, -1, -1]);
+    expect(stars().map((star) => star.getAttribute("aria-checked"))).toEqual([
+      "false",
+      "false",
+      "true",
+      "false",
+      "false",
+    ]);
+  });
+
+  it("falls back to unrated for a value that is not a number", () => {
+    render(<StarRating value="excellent" onChange={vi.fn()} />);
+    expect(stars().map((star) => star.tabIndex)).toEqual([0, -1, -1, -1, -1]);
+    expect(stars().every((star) => star.getAttribute("aria-checked") === "false")).toBe(true);
+  });
+
+  it("clamps a rating outside 0–5 to something reachable", () => {
+    render(<StarRating value={9} onChange={vi.fn()} />);
+    expect(stars().map((star) => star.tabIndex)).toEqual([-1, -1, -1, -1, 0]);
+    expect(stars()[4].getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("steps from a numeric string instead of concatenating to it", () => {
+    const onChange = vi.fn();
+    render(<StarRating value="2" onChange={onChange} />);
+    fireEvent.keyDown(stars()[1], { key: "ArrowRight" });
+    expect(onChange).toHaveBeenCalledWith(3);
+  });
+});
+
 describe("StarRating toggle-button variant (#24)", () => {
   it("keeps every star reachable by Tab and ignores the arrow keys", () => {
     const onChange = vi.fn();
