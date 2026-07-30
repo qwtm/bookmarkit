@@ -14,6 +14,7 @@ import {
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
 import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
+import { remoteFaviconsEnabled, setRemoteFaviconsEnabled } from "../utils/favicon.js";
 import { encryptString, decryptString, isEncryptedBlob } from "../utils/keyCrypto.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useTheme } from "../hooks/useTheme.js";
@@ -76,6 +77,9 @@ const BookmarkApp = () => {
     return (globalDefault || LLM_PROVIDERS.GEMINI).toString().toLowerCase();
   });
   const [runtimeProviderOptions, setRuntimeProviderOptions] = useState({});
+  // #39: Off by default — fetching favicons from a third party would report the
+  // user's hostnames on every render.
+  const [remoteFavicons, setRemoteFavicons] = useState(remoteFaviconsEnabled);
   // #29: optional passphrase encryption-at-rest for the stored LLM options.
   const [optionsEncrypted, setOptionsEncrypted] = useState(false);
   const [optionsLocked, setOptionsLocked] = useState(false); // encrypted but not yet unlocked this session
@@ -1069,6 +1073,7 @@ const BookmarkApp = () => {
               onClearSearch={clearAllFilters}
               onAddNew={handleAddNewBookmark}
               onImport={handleImportExportOpen}
+              remoteFavicons={remoteFavicons}
               filters={manualFilters}
               tagFacets={tagFacets}
               onFilterChange={setManualFilters}
@@ -1119,6 +1124,11 @@ const BookmarkApp = () => {
             themes={themes}
             onThemeChange={selectTheme}
             onThemeUpload={(file) => uploadTheme(file, showCustomMessage)}
+            remoteFavicons={remoteFavicons}
+            onRemoteFaviconsChange={(enabled) => {
+              setRemoteFaviconsEnabled(enabled);
+              setRemoteFavicons(enabled);
+            }}
             onClose={() => setIsOptionsOpen(false)}
           />
         )}

@@ -276,6 +276,11 @@ copies differ, the one carrying tags, a rating, or a description is the one kept
 - Firebase mode: data is stored in your Firebase project
 - API keys you enter in Options are saved to localStorage in your browser
 - LLM calls are made from your browser to providers you select
+- Site icons: no icon is fetched over the network unless you turn on “Load site icons from the web”
+  under Options → Privacy. With it off, Bookmarkit uses your browser’s own favicon cache (extension
+  only) or a neutral placeholder. With it on, each visible bookmark fetches the icon address saved
+  with it, or asks google.com for one by domain — never by path or query. An icon address saved on a
+  bookmark is treated the same as any other: an imported `ICON` attribute can point anywhere.
 
 ## Troubleshooting
 
