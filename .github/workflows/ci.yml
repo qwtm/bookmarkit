@@ -8,8 +8,9 @@ on:
   push:
     branches:
       - main
-  # Version-cut dispatches CI onto the bot-maintained Changesets branch, because
-  # GITHUB_TOKEN-created PR updates do not emit pull_request workflow runs.
+  # Manual lever for an arbitrary ref. The version branch no longer needs a
+  # dispatch: version-cut.yml opens that PR under chores-dumb / RELEASE_TOKEN, so
+  # it gets ordinary pull_request runs (contexts match by name across event types).
   workflow_dispatch:
 
 # Cancel superseded PR runs. Main-push runs are keyed by SHA rather than ref: a shared ref group

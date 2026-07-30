@@ -594,6 +594,11 @@ Releases are automated; nobody tags or uploads by hand.
 3. Merging _that_ PR is the release action: it tags `v<version>` and triggers **Release**, which
    re-runs the full gate against the tag and publishes the zip + `.sha256` to a GitHub Release.
 
+Version cut authenticates as `chores-dumb[bot]` (falling back to the `RELEASE_TOKEN` secret)
+so the version PR and the tag push are allowed under this repository's Actions actor policy.
+`github-actions[bot]` is not on that allow list, so a `GITHUB_TOKEN` handoff cannot start
+Release or CI on the version branch.
+
 `npm run check:version-policy` enforces that the three version artifacts never drift apart — a
 manifest that disagrees with `package.json` would ship a build that lies about its own version.
 

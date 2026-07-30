@@ -1,13 +1,25 @@
-# Version-cut automation (#8), mirroring qwts/image-trail and qwts/photos:
+# Version-cut automation (#8), mirroring qwts/photos and qwts/overlook:
 #
 #  1. version-pr — while changesets are pending, keep one rolling version PR open and current.
 #     Merging that PR is the human "cut a release" action.
 #  2. tag — after the version PR merges (package version changed, no pending changesets), tag
 #     v<version> and hand off to the release workflow.
 #
-# GITHUB_TOKEN events cannot trigger other workflows, so this workflow also:
-#  - dispatches CI onto the bot-refreshed version branch;
-#  - explicitly dispatches release.yml after pushing the version tag.
+# Both halves authenticate as chores-dumb[bot], a GitHub App whose installation token is minted
+# per run. RELEASE_TOKEN (a human PAT) stays only as a fallback where the App secrets are not
+# configured yet. Two reasons for a bot rather than GITHUB_TOKEN alone:
+#  - GITHUB_TOKEN events cannot trigger other workflows. A bot-refreshed version PR got no
+#    pull_request CI runs, and a GITHUB_TOKEN tag push fired no on:push:tags run — both needed
+#    explicit dispatches.
+#  - This repository's Actions actor policy authorizes actors explicitly, and github-actions[bot]
+#    is not among them. Anything it triggers — including those dispatches — dies at startup with
+#    "Actor is not allowed to trigger Actions workflows".
+# Under the App the actor is an authorized non-human account and both events fire on their own:
+# the version PR gets real pull_request runs, and the tag push starts release.yml directly. It
+# also un-deadlocks review — a PAT opens the version PR as qwts, who cannot approve their own PR,
+# so every cut needed a bypass. chores-dumb[bot] opens it, and a human approves.
+# If RELEASE_TOKEN and the App secrets are both absent, the jobs fall back to GITHUB_TOKEN and
+# still version and tag correctly — only the downstream runs fail to start.
 name: Version cut
 
 on:
@@ -28,11 +40,30 @@ jobs:
   version-pr:
     name: Version packages PR
     runs-on: ubuntu-latest
+    # These scopes exist only for the `|| github.token` fallback below; an App
+    # token or PAT carries its own.
     permissions:
       contents: write
       pull-requests: write
-      actions: write
+    env:
+      HAS_CHORES_DUMB: ${{ secrets.CHORES_DUMB_CLIENT_ID != '' }}
     steps:
+      - name: Mint the chores-dumb token
+        id: chores
+        # Never fatal. The token expressions below fall back to RELEASE_TOKEN and
+        # then github.token, but a *failed* step aborts the job before any of that
+        # applies — so an unreadable App key would take the whole release pipeline
+        # down instead of degrading it.
+        continue-on-error: true
+        # actions/* — first-party, so the App key never reaches a third-party action.
+        if: env.HAS_CHORES_DUMB == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          # client-id, not app-id: v3 deprecated the latter, and the two are easy
+          # to confuse with the bot's *user* id, which is a third number entirely.
+          client-id: ${{ secrets.CHORES_DUMB_CLIENT_ID }}
+          private-key: ${{ secrets.CHORES_DUMB_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,26 +88,37 @@ jobs:
           title: "chore: version bookmarkit"
           commit: "chore: version bookmarkit"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Run required checks on the version branch
-        if: steps.changesets.outputs.hasChangesets == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run ci.yml --ref changeset-release/main
+          # Prefer chores-dumb so the PR is an authorized actor (real pull_request CI)
+          # and so qwts can approve it. RELEASE_TOKEN is the interim fallback.
+          GITHUB_TOKEN: ${{ steps.chores.outputs.token || secrets.RELEASE_TOKEN || github.token }}
 
   tag:
     name: Tag version merges
     runs-on: ubuntu-latest
+    # Scopes for the `|| github.token` fallback only; `actions: write` covers the
+    # stranded-tag recovery dispatch below.
     permissions:
       contents: write
       actions: write
+    env:
+      HAS_CHORES_DUMB: ${{ secrets.CHORES_DUMB_CLIENT_ID != '' }}
     steps:
+      - name: Mint the chores-dumb token
+        id: chores
+        continue-on-error: true
+        if: env.HAS_CHORES_DUMB == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.CHORES_DUMB_CLIENT_ID }}
+          private-key: ${{ secrets.CHORES_DUMB_PRIVATE_KEY }}
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-          persist-credentials: false
+          # The tag push has to start release.yml by itself, so it must carry the
+          # App/PAT credentials rather than GITHUB_TOKEN's.
+          token: ${{ steps.chores.outputs.token || secrets.RELEASE_TOKEN || github.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -85,7 +127,7 @@ jobs:
 
       - name: Tag when the current version is a fresh cut
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.chores.outputs.token || secrets.RELEASE_TOKEN || github.token }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           # A normal main push is a release cut only when package.json's version changed. Manual
@@ -112,26 +154,24 @@ jobs:
 
           if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
             echo "$version already tagged."
+            # The one dispatch that survives: an already-existing tag has no push
+            # event left to replay. Must run under chores-dumb / RELEASE_TOKEN —
+            # a github-actions[bot] dispatch is refused by the Actions actor policy.
             if ! gh release view "$version" >/dev/null 2>&1; then
               echo "$version has no release — dispatching recovery."
-              gh workflow run release.yml --ref main -f tag="$version"
+              gh workflow run release.yml --ref main -f tag="$version" \
+                || echo "::notice::release.yml not dispatchable — $version still has no release."
             fi
             exit 0
           fi
 
-          # Create the annotated tag through the API. Checkout credentials stay disabled, so the
-          # workflow token is never persisted in .git/config or exposed to later tooling.
-          tag_object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
-            -f tag="$version" \
-            -f message="bookmarkit $version" \
-            -f object="$GITHUB_SHA" \
-            -f type=commit \
-            --jq .sha)
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f ref="refs/tags/$version" \
-            -f sha="$tag_object" >/dev/null
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "$version" -m "bookmarkit $version"
+          git push origin "$version"
           echo "Tagged $version."
-
-          # A tag created with GITHUB_TOKEN does not emit a new workflow run. Dispatch the trusted
-          # workflow from main while selecting the immutable, ancestry-checked tag as build input.
-          gh workflow run release.yml --ref main -f tag="$version"
+          # No dispatch: pushed under the App/PAT, this tag fires release.yml's
+          # on:push:tags trigger directly. Without an authorized token the push is
+          # a GITHUB_TOKEN push and starts nothing — re-run this workflow via
+          # workflow_dispatch once the secret is present and the already-tagged
+          # recovery path above picks the tag up.
