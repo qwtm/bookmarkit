@@ -40,6 +40,8 @@ const BookmarkForm = ({
   const [ignoreUrlValidation, setIgnoreUrlValidation] = useState(bookmark?.urlStatus === "ignored");
   // UX-02: Split into 4 distinct states so spinner only shows during active validation
   const [currentUrlValidity, setCurrentUrlValidity] = useState("idle"); // 'idle', 'checking', 'valid', 'invalid'
+  // #28: URLs a redirect has already moved the field away from.
+  const redirectedFrom = useRef(new Set());
 
   // UX-01: Error state for LLM suggestion failures
   const [descriptionError, setDescriptionError] = useState("");
@@ -143,8 +145,17 @@ const BookmarkForm = ({
         const result = await fetchUrlStatus(url);
         if (!isMounted) return;
         setCurrentUrlValidity(result.status);
-        if (result.redirectUrl) {
-          setFormData((prev) => ({ ...prev, url: result.redirectUrl }));
+        // #28: The rewritten URL is a dependency of this effect, so following a
+        // redirect re-runs the check. Never follow one back to a URL we already
+        // left, or the two can bounce forever, and only rewrite the field if the
+        // user has not typed something else meanwhile.
+        if (
+          result.redirectUrl &&
+          result.redirectUrl !== url &&
+          !redirectedFrom.current.has(result.redirectUrl)
+        ) {
+          redirectedFrom.current.add(url);
+          setFormData((prev) => (prev.url === url ? { ...prev, url: result.redirectUrl } : prev));
         }
       } catch {
         if (isMounted) setCurrentUrlValidity("invalid");

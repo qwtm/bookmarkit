@@ -226,18 +226,67 @@ const PROVIDER_UNWRAPPERS = {
 
 // ─── JSON extraction ──────────────────────────────────────────────────────────
 
-function extractJsonFromText(text) {
-  if (!text) return null;
-  // Match first ```json or ``` fenced block — non-greedy to avoid multi-fence issues
-  const fence = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/i);
-  if (fence) return fence[1].trim();
-  const trimmed = text.trim();
-  if (
-    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
-    (trimmed.startsWith("[") && trimmed.endsWith("]"))
-  )
-    return trimmed;
+// #28: Find the first balanced {...} or [...] anywhere in the text, so a model
+// that wraps its JSON in prose still yields steps. Quotes and escapes are
+// tracked, otherwise a brace inside a search term would end the scan early.
+function scanBalancedJson(text) {
+  const start = text.search(/[[{]/u);
+  if (start === -1) return null;
+  const open = text[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+    } else if (char === '"') {
+      inString = true;
+    } else if (char === open) {
+      depth++;
+    } else if (char === close && --depth === 0) {
+      return text.slice(start, i + 1);
+    }
+  }
   return null;
+}
+
+// #28: Every shape the JSON might arrive in, most explicit first. Each fenced
+// block is offered, not just the first, because a model that explains itself in
+// one fence and answers in the next used to be read as an empty plan.
+function* jsonCandidates(text) {
+  for (const [, body] of text.matchAll(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/giu)) {
+    const fenced = body.trim();
+    if (fenced) yield fenced;
+  }
+  const trimmed = text.trim();
+  if (trimmed) yield trimmed;
+  const scanned = scanBalancedJson(text);
+  if (scanned) yield scanned;
+}
+
+// Returns { value } for the first candidate that parses, or null when none do —
+// wrapped so a response of literal `null` is distinguishable from failure.
+function parseFirstJson(text) {
+  if (!text) return null;
+  for (const candidate of jsonCandidates(text)) {
+    try {
+      return { value: JSON.parse(candidate) };
+    } catch {
+      // Not this shape — try the next.
+    }
+  }
+  return null;
+}
+
+// A usable plan is a step, or a list containing one. Anything else (a provider's
+// API envelope, say) means we have not found the steps yet.
+function looksLikePlan(value) {
+  const steps = Array.isArray(value) ? value : [value];
+  return steps.some((step) => step && typeof step === "object" && typeof step.action === "string");
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -246,7 +295,7 @@ function extractJsonFromText(text) {
  * Parse a raw LLM response string into a validated, sanitized array of agent steps.
  *
  * Handles:
- *  1. Fenced code block extraction (```json ... ```)
+ *  1. JSON extraction from fenced blocks, bare output, or output wrapped in prose
  *  2. Provider-specific API wrapper unwrapping (ARCH-01) using `providerName`
  *  3. Step validation and parameter sanitization (ARCH-03)
  *
@@ -257,34 +306,26 @@ function extractJsonFromText(text) {
 export function parseAgentResponse(responseText, providerName) {
   if (!responseText) return [];
 
-  // Step 1: Try to extract JSON from the response as-is (most common case)
-  let extracted = extractJsonFromText(responseText);
+  // Step 1: Read the JSON out of the response, whether it is fenced, bare, or
+  // surrounded by prose.
+  let result = parseFirstJson(responseText);
 
-  // Step 2: Fallback — provider-specific wrapper unwrapping (ARCH-01)
-  if (!extracted && providerName) {
+  // Step 2: What parsed may be a provider API envelope rather than the plan —
+  // unwrap it and read the text inside (ARCH-01).
+  if (providerName && !looksLikePlan(result?.value)) {
     const unwrap = PROVIDER_UNWRAPPERS[providerName];
-    if (unwrap) {
-      try {
-        const raw = JSON.parse(responseText);
-        const inner = unwrap(raw);
-        if (inner) extracted = extractJsonFromText(inner) || (inner.trim() ? inner : null);
-      } catch {
-        // responseText is not a JSON wrapper — continue
-      }
-    }
+    const inner = unwrap && result?.value ? unwrap(result.value) : "";
+    const unwrapped = inner ? parseFirstJson(inner) : null;
+    if (unwrapped) result = unwrapped;
   }
 
-  // Step 3: Parse JSON
-  let parsed;
-  try {
-    parsed = JSON.parse(extracted || responseText);
-  } catch {
+  if (!result) {
     console.warn("[parser] Failed to parse LLM response as JSON:", responseText?.slice(0, 200));
     return [];
   }
 
-  // Step 4: Normalise to array of step objects
-  const stepsArray = Array.isArray(parsed) ? parsed : [parsed];
+  // Step 3: Normalise to array of step objects
+  const stepsArray = Array.isArray(result.value) ? result.value : [result.value];
 
   // Step 5: Validate and sanitize each step (ARCH-01, ARCH-03)
   const validSteps = [];
