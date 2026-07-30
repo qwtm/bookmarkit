@@ -226,6 +226,28 @@ describe("brokenOnly (#47)", () => {
   });
 });
 
+describe("neverOpened (#50)", () => {
+  const withHistory = [
+    { id: "1", title: "Read", url: "http://a.com", lastOpenedAt: "2026-07-01T00:00:00.000Z" },
+    { id: "2", title: "Untouched", url: "http://b.com", createdAt: "2026-01-01T00:00:00.000Z" },
+    { id: "3", title: "Older, untouched", url: "http://c.com", createdAt: "2025-01-01T00:00:00Z" },
+  ];
+
+  it("keeps only what nothing has opened, oldest first", () => {
+    const filtered = applyManualFilters({ ...EMPTY_FILTERS, neverOpened: true }, withHistory);
+
+    expect(filtered.map((b) => b.id)).toEqual(["3", "2"]);
+  });
+
+  it("changes nothing while it is off", () => {
+    expect(applyManualFilters(EMPTY_FILTERS, withHistory)).toHaveLength(3);
+  });
+
+  it("counts as an active filter, so Clear filters reaches it", () => {
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, neverOpened: true })).toBe(true);
+  });
+});
+
 // #55: clicking a folder in the tree is a manual filter, so it combines with the
 // others and a saved view can hold it.
 describe("filtering by folder (#55)", () => {

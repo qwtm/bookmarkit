@@ -20,6 +20,7 @@ import {
 import { isBroken } from "../utils/linkHealth.js";
 import { fetchUrlStatus } from "../utils/urlStatus.js";
 import { organizePatches } from "../utils/organizePlan.js";
+import { openedPatch } from "../utils/openHistory.js";
 import { isViewWorthSaving, matchingViewId } from "../utils/smartViews.js";
 import { useSemanticDedupe } from "../hooks/useSemanticDedupe.js";
 import { isSafeHttpUrl } from "../utils/url.js";
@@ -31,6 +32,7 @@ import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useLinkSweep } from "../hooks/useLinkSweep.js";
 import { useOrganizer } from "../hooks/useOrganizer.js";
+import { useDigest } from "../hooks/useDigest.js";
 import { useSemanticSearch } from "../hooks/useSemanticSearch.js";
 import { useLLMSettings } from "../hooks/useLLMSettings.js";
 import { useTheme } from "../hooks/useTheme.js";
@@ -47,6 +49,7 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import OptionsModal from "./OptionsModal";
 import BookmarkList from "./BookmarkList.jsx";
 import BulkEditBar from "./BulkEditBar.jsx";
+import DigestModal from "./DigestModal.jsx";
 import FolderTree, { DRAG_BOOKMARKS } from "./FolderTree.jsx";
 import LinkSweepBar from "./LinkSweepBar.jsx";
 import OrganizeReviewModal from "./OrganizeReviewModal.jsx";
@@ -134,6 +137,8 @@ const BookmarkApp = () => {
   // the collection needs, so it does not take space until asked for.
   const [isFolderPaneOpen, setIsFolderPaneOpen] = useState(false);
   const [bookmarksToDelete, setBookmarksToDelete] = useState([]);
+  // #50: the digest being read, null when none is.
+  const [digest, setDigest] = useState(null);
   // #44: the diff a tidy-up is waiting to be reviewed through, empty when none is.
   const [proposedChanges, setProposedChanges] = useState([]);
   const [isApplyingChanges, setIsApplyingChanges] = useState(false);
@@ -147,14 +152,25 @@ const BookmarkApp = () => {
 
   // #11: only http(s) URLs open — javascript: and data: are refused out loud
   // rather than silently ignored.
-  const openBookmark = useCallback((bookmark) => {
-    if (isSafeHttpUrl(bookmark.url)) window.open(bookmark.url, "_blank", "noopener,noreferrer");
-    else
-      showCustomMessage(
-        "This bookmark has an unsupported or unsafe URL and was not opened.",
-        "error"
-      );
-  }, []);
+  //
+  // #50: opening is also the one thing the app observes about a bookmark, so it is
+  // recorded here — the single path that opens one. It writes straight to the store
+  // rather than through the recording helpers: opening is not an edit, and an
+  // "undo opening a bookmark" entry would be nonsense.
+  const openBookmark = useCallback(
+    (bookmark) => {
+      if (!isSafeHttpUrl(bookmark.url)) {
+        showCustomMessage(
+          "This bookmark has an unsupported or unsafe URL and was not opened.",
+          "error"
+        );
+        return;
+      }
+      window.open(bookmark.url, "_blank", "noopener,noreferrer");
+      storeRef.current?.update(bookmark.id, openedPatch()).catch(() => {});
+    },
+    [storeRef]
+  );
 
   const {
     selectedId: selectedBookmarkId,
@@ -467,6 +483,14 @@ const BookmarkApp = () => {
   // then organizes runs both in the same tick, before React has re-rendered with
   // the new plan, so `displayedBookmarks` would still be the previous view and the
   // tidy-up would range over bookmarks the query had just excluded.
+  // #50: the week, on request. The sections are computed locally; a model only
+  // names the groups, and there is a deterministic grouping when there is none.
+  const digestEngine = useDigest({
+    provider: runtimeProvider,
+    providerOptions,
+    locked: encryption.locked,
+  });
+
   const handleOrganize = useCallback(
     async (list, fields) => {
       const rows = await organizer.run(list, fields ? { fields } : {});
@@ -496,6 +520,30 @@ const BookmarkApp = () => {
       }
     },
     [applyBulkEdit, proposedChanges]
+  );
+
+  const showDigest = useCallback(async () => {
+    const built = await digestEngine.build(bookmarks);
+    if (!built) {
+      showCustomMessage("Nothing to report yet — save a few bookmarks first.", "info");
+      return;
+    }
+    setDigest(built);
+  }, [bookmarks, digestEngine]);
+
+  const showNeverOpened = useCallback(() => {
+    setManualFilters((prev) => ({ ...prev, neverOpened: true }));
+    setDigest(null);
+  }, []);
+
+  // "Triage these" is the organizer, pointed at the untagged set rather than at
+  // whatever is on screen.
+  const triageUntagged = useCallback(
+    async (untagged) => {
+      setDigest(null);
+      await handleOrganize(untagged, ["tags"]);
+    },
+    [handleOrganize]
   );
 
   // #86: the optional second opinion on duplicates. With no provider configured,
@@ -567,7 +615,8 @@ const BookmarkApp = () => {
     isHelpModalOpen ||
     isOptionsOpen ||
     isMessageModalOpen ||
-    proposedChanges.length > 0;
+    proposedChanges.length > 0 ||
+    Boolean(digest);
 
   useKeyboardShortcuts(
     {
@@ -703,6 +752,7 @@ const BookmarkApp = () => {
         }
         if (step.action === "searchBookmarks" && step.parameters?.searchTerm)
           await widenSearch(step.parameters.searchTerm);
+        if (step.action === "weeklyDigest") await showDigest();
         if (step.action === "organizeBookmarks")
           await handleOrganize(inView(), step.parameters?.fields);
         if (REORDER_ACTIONS.includes(step.action)) await handlePersistReorderFromAgent(step);
@@ -714,6 +764,7 @@ const BookmarkApp = () => {
       handleOrganize,
       handlePersistReorderFromAgent,
       proposeSemanticDuplicates,
+      showDigest,
       stageDeletion,
       widenSearch,
     ]
@@ -922,6 +973,14 @@ const BookmarkApp = () => {
               <Button
                 size="sm"
                 intent="secondary"
+                onClick={showDigest}
+                loading={digestEngine.running}
+              >
+                Digest
+              </Button>
+              <Button
+                size="sm"
+                intent="secondary"
                 onClick={sweep.running ? sweep.stop : sweep.start}
               >
                 {sweep.running ? "Stop Check" : "Check Links"}
@@ -1120,6 +1179,15 @@ const BookmarkApp = () => {
             onConfirm={handleConfirmDelete}
             onCancel={handleCancelDelete}
             isLoading={isDeleting}
+          />
+        )}
+        {digest && (
+          <DigestModal
+            digest={digest}
+            onOpen={openBookmark}
+            onShowNeverOpened={showNeverOpened}
+            onTriage={triageUntagged}
+            onClose={() => setDigest(null)}
           />
         )}
         {proposedChanges.length > 0 && (

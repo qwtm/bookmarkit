@@ -43,6 +43,7 @@ function sanitizeFilters(raw) {
     excludeTags: asTagList(raw.excludeTags),
     minRating: asRating(raw.minRating),
     brokenOnly: raw.brokenOnly === true,
+    neverOpened: raw.neverOpened === true,
     folder: raw.folder === UNFILED ? UNFILED : normalizeFolderPath(raw.folder),
     sortBy: isSortableField(raw.sortBy) ? raw.sortBy : "",
     order: raw.order === "desc" ? "desc" : "asc",

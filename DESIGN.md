@@ -152,6 +152,35 @@ Two decisions in the sweep are load-bearing:
 Its writes deliberately skip the undo recorder: a sweep reports what the web
 already did, and an undo would mean writing back a status known to be wrong.
 
+## The week
+
+`lastOpenedAt` is the only field the app observes for itself; everything else on a
+bookmark is something a user typed or imported. It is written on the single path
+that opens one (`openBookmark`), straight to the store rather than through the
+recording helpers, because opening is not an edit and an "undo opening a bookmark"
+entry would be nonsense. Absent means never, so a collection that predates the
+field reads as never opened — the honest answer, since nothing recorded otherwise.
+
+The digest is split the way link health is. `utils/digest.js` chooses the three
+sets, purely and with no provider: what arrived this week, what settled in and was
+never opened, and what has no tags. `useDigest` adds one request that only names
+the groups the week's additions fall into, and a failure, a missing provider or a
+locked key downgrades to grouping by the folder or tag the bookmarks already carry.
+The valuable half of the feature therefore never depends on an API key.
+
+Two smaller decisions follow from that split:
+
+- The neglected sets exclude the current window. Something saved yesterday is new,
+  not ignored, and including it would make the digest nag about its own first
+  section.
+- The exits are existing features, not new ones. "Show never opened" sets the
+  manual filter — so it composes with sort, folder and bulk editing, and a saved
+  view can hold it — and "Triage the untagged" is the organizer (#44) pointed at
+  that set with `fields: ["tags"]`, reviewed through the same diff.
+
+`findNeverOpened` is also an agent action, for the same reason `findBrokenLinks`
+is: it reads a field the app wrote itself, so it needs no model and no network.
+
 ## Undo
 
 Undo is a property of the write path, not of the two call sites that remember to
