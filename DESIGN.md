@@ -152,6 +152,46 @@ Two decisions in the sweep are load-bearing:
 Its writes deliberately skip the undo recorder: a sweep reports what the web
 already did, and an undo would mean writing back a status known to be wrong.
 
+Recovery (#102) is the sweep's deliberate omission, added back as its own step.
+`utils/archiveRecovery.js` asks one hard-coded host — the archive's availability
+API — with the bookmark's URL only ever as a query parameter, so nothing here
+fetches a bookmark and there is no redirect to refuse. The two guards that matter
+are on either end: a URL is asked about only if it passes the same public-http(s)
+gate the checks use, and the address that comes back is validated as a public https
+URL on the archive's own host before it can reach a bookmark. It is a remote
+server's claim, which is what `redirect: "manual"` exists to distrust.
+
+Recovery proposes; it never writes. A snapshot becomes a reviewable change
+(`utils/changeReview.js`) carrying the new address and the stale verdict about the
+old one, and the user's acceptance goes through `applyBulkEdit` — so re-pointing
+thirty links is one undo, and `bulkEdit`'s field list had to grow to include `url`
+so that undo can put the original address back.
+
+That shared row shape is why the review modal is `ChangeReviewModal` rather than
+the organizer's: two features now propose rather than write, and both are only
+tolerable because disagreeing with them is cheap. The modal renders rows and owns
+which are accepted; it knows nothing about where they came from.
+
+Recovery (#102) is the sweep's deliberate omission, added back as its own step.
+`utils/archiveRecovery.js` asks one hard-coded host — the archive's availability
+API — with the bookmark's URL only ever as a query parameter, so nothing here
+fetches a bookmark and there is no redirect to refuse. The two guards that matter
+are on either end: a URL is asked about only if it passes the same public-http(s)
+gate the checks use, and the address that comes back is validated as a public https
+URL on the archive's own host before it can reach a bookmark. It is a remote
+server's claim, which is what `redirect: "manual"` exists to distrust.
+
+Recovery proposes; it never writes. A snapshot becomes a reviewable change
+(`utils/changeReview.js`) carrying the new address and the stale verdict about the
+old one, and the user's acceptance goes through `applyBulkEdit` — so re-pointing
+thirty links is one undo, and `bulkEdit`'s field list had to grow to include `url`
+so that undo can put the original address back.
+
+That shared row shape is why the review modal is `ChangeReviewModal` rather than
+the organizer's: two features now propose rather than write, and both are only
+tolerable because disagreeing with them is cheap. The modal renders rows and owns
+which are accepted; it knows nothing about where they came from.
+
 ## The week
 
 `lastOpenedAt` is the only field the app observes for itself; everything else on a

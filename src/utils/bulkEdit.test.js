@@ -120,6 +120,22 @@ describe("previousValuesFor (#54)", () => {
     // not a blank string a list would choke on.
     expect(previous).toEqual([{ id: "1", tags: [], folderId: "", rating: 0 }]);
   });
+
+  // #102 writes an address, a check status and the legacy broken flag together.
+  // Undoing only part of that would leave a restored dead link looking healthy.
+  it("puts an archive recovery back in full", () => {
+    const before = [{ id: "1", url: "https://gone.test/a", urlStatus: "dead", unreachable: true }];
+    const patch = {
+      id: "1",
+      url: "https://web.archive.org/web/2019/https://gone.test/a",
+      urlStatus: "idle",
+      unreachable: false,
+    };
+
+    expect(previousValuesFor([patch], before)).toEqual([
+      { id: "1", url: "https://gone.test/a", urlStatus: "dead", unreachable: true },
+    ]);
+  });
 });
 
 describe("describeBulkEdit (#54)", () => {

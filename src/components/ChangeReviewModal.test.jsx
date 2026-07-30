@@ -2,7 +2,7 @@ import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import OrganizeReviewModal from "./OrganizeReviewModal.jsx";
+import ChangeReviewModal from "./ChangeReviewModal.jsx";
 
 const rows = [
   {
@@ -24,11 +24,11 @@ const rows = [
 const setup = (over = {}) => {
   const onApply = vi.fn();
   const onCancel = vi.fn();
-  render(<OrganizeReviewModal rows={rows} onApply={onApply} onCancel={onCancel} {...over} />);
+  render(<ChangeReviewModal rows={rows} onApply={onApply} onCancel={onCancel} {...over} />);
   return { onApply, onCancel };
 };
 
-describe("OrganizeReviewModal (#44)", () => {
+describe("ChangeReviewModal (#44)", () => {
   it("shows what would change, before and after", () => {
     setup();
 

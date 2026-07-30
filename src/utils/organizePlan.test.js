@@ -4,7 +4,6 @@ import {
   chunkForOrganize,
   cleanFolderPath,
   existingFolders,
-  organizePatches,
   organizeRow,
   organizeRows,
   parseOrganizeProposals,
@@ -181,26 +180,5 @@ describe("organizeRows", () => {
       proposals
     );
     expect(rows).toEqual([]);
-  });
-});
-
-describe("organizePatches", () => {
-  const rows = [
-    { id: "a", title: "A", fields: ["tags"], before: { tags: [] }, after: { tags: ["rust"] } },
-    {
-      id: "b",
-      title: "B",
-      fields: ["folderId"],
-      before: { folderId: "" },
-      after: { folderId: "W" },
-    },
-  ];
-
-  it("writes only what the user kept", () => {
-    expect(organizePatches(rows, ["b"])).toEqual([{ id: "b", folderId: "W" }]);
-  });
-
-  it("writes nothing when everything was rejected", () => {
-    expect(organizePatches(rows, [])).toEqual([]);
   });
 });

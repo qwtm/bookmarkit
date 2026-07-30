@@ -12,16 +12,27 @@
 import { normalizeTag } from "./bookmarkFilters.js";
 
 /**
- * The fields a bulk write is allowed to touch. Deliberately not title or url.
+ * The fields a write through this path may touch, which is what undo has to be able
+ * to put back. Deliberately not title.
  *
- * `description` is not something the bar offers — writing one description across
- * a selection makes no sense — but the organizer (#44) proposes them one by one
- * and applies through this same path, so undo has to know to capture it.
+ * The bar offers only the first three. `description` is here because the organizer
+ * (#44) proposes them one at a time through this path, and `url`, `urlStatus` and
+ * the legacy `unreachable` flag because archive recovery (#102) re-points a dead
+ * link through it — an undo that restored the address but left the bookmark no
+ * longer counted as broken would be worse than no undo at all.
  */
-const FIELDS = ["tags", "folderId", "rating", "description"];
+const FIELDS = ["tags", "folderId", "rating", "description", "url", "urlStatus", "unreachable"];
 
 /** What "absent" looks like per field, for restoring one. */
-const EMPTY = Object.freeze({ tags: [], folderId: "", rating: 0, description: "" });
+const EMPTY = Object.freeze({
+  tags: [],
+  folderId: "",
+  rating: 0,
+  description: "",
+  url: "",
+  urlStatus: "idle",
+  unreachable: false,
+});
 
 const asTagList = (value) => {
   const raw = Array.isArray(value) ? value : String(value ?? "").split(",");

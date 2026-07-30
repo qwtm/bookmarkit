@@ -16,6 +16,7 @@
 //   would be reviewing something else than the user asked about.
 
 import { extractJsonArray } from "../llm/jsonArray.js";
+import { changeRow } from "./changeReview.js";
 import { normalizeTag } from "./bookmarkFilters.js";
 import { folderSegments } from "./folderTree.js";
 
@@ -152,19 +153,9 @@ const sameTags = (before = [], after = []) =>
  */
 export function organizeRow(bookmark, proposal) {
   if (!bookmark?.id || !proposal) return null;
-  const before = {};
-  const after = {};
-
-  for (const field of ORGANIZE_FIELDS) {
-    const change = CHANGES[field](bookmark, proposal);
-    if (!change) continue;
-    before[field] = change.before;
-    after[field] = change.after;
-  }
-
-  const fields = ORGANIZE_FIELDS.filter((field) => field in after);
-  if (fields.length === 0) return null;
-  return { id: bookmark.id, title: bookmark.title || bookmark.url || "", fields, before, after };
+  const changes = {};
+  for (const field of ORGANIZE_FIELDS) changes[field] = CHANGES[field](bookmark, proposal);
+  return changeRow(bookmark, changes);
 }
 
 /** What each field's proposal would change, field by field, or null for nothing. */
@@ -218,21 +209,3 @@ const only = (proposal, wanted) => {
   }
   return Object.keys(kept).length > 0 ? kept : null;
 };
-
-/**
- * The patches for the rows the user accepted, ready for the bulk-edit write path
- * so the whole tidy-up is one undo entry.
- *
- * @param {object[]} rows
- * @param {Set<string>|string[]} accepted Ids the user kept.
- * @returns {object[]}
- */
-export function organizePatches(rows = [], accepted = []) {
-  const keep = accepted instanceof Set ? accepted : new Set(accepted);
-  const patches = [];
-  for (const row of rows) {
-    if (!keep.has(row?.id)) continue;
-    patches.push({ id: row.id, ...row.after });
-  }
-  return patches;
-}

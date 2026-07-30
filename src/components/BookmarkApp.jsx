@@ -17,9 +17,10 @@ import {
   parentFolder,
   renameFolderPatches,
 } from "../utils/folderTree.js";
+import { recoverable } from "../utils/archiveRecovery.js";
 import { isBroken } from "../utils/linkHealth.js";
 import { fetchUrlStatus } from "../utils/urlStatus.js";
-import { organizePatches } from "../utils/organizePlan.js";
+import { acceptedPatches } from "../utils/changeReview.js";
 import { openedPatch } from "../utils/openHistory.js";
 import { isViewWorthSaving, matchingViewId } from "../utils/smartViews.js";
 import { useSemanticDedupe } from "../hooks/useSemanticDedupe.js";
@@ -27,11 +28,12 @@ import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { remoteFaviconsEnabled, setRemoteFaviconsEnabled } from "../utils/favicon.js";
 import { useAgentEngine } from "../hooks/useAgentEngine.js";
-import { useBookmarkSelection } from "../hooks/useBookmarkSelection.js";
+import { useBookmarkSelection, keepsSelectionProps } from "../hooks/useBookmarkSelection.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useLinkSweep } from "../hooks/useLinkSweep.js";
 import { useOrganizer } from "../hooks/useOrganizer.js";
+import { useArchiveRecovery } from "../hooks/useArchiveRecovery.js";
 import { useDigest } from "../hooks/useDigest.js";
 import { useSemanticSearch } from "../hooks/useSemanticSearch.js";
 import { useLLMSettings } from "../hooks/useLLMSettings.js";
@@ -52,7 +54,7 @@ import BulkEditBar from "./BulkEditBar.jsx";
 import DigestModal from "./DigestModal.jsx";
 import FolderTree, { DRAG_BOOKMARKS } from "./FolderTree.jsx";
 import LinkSweepBar from "./LinkSweepBar.jsx";
-import OrganizeReviewModal from "./OrganizeReviewModal.jsx";
+import ChangeReviewModal from "./ChangeReviewModal.jsx";
 import SmartViewBar from "./SmartViewBar.jsx";
 import { AgentPlan, Button, IconButton, Kbd, Modal, SearchBar, Toast } from "./DesignSystem.jsx";
 
@@ -139,8 +141,9 @@ const BookmarkApp = () => {
   const [bookmarksToDelete, setBookmarksToDelete] = useState([]);
   // #50: the digest being read, null when none is.
   const [digest, setDigest] = useState(null);
-  // #44: the diff a tidy-up is waiting to be reviewed through, empty when none is.
-  const [proposedChanges, setProposedChanges] = useState([]);
+  // #44/#102: the change set waiting to be reviewed — `{title, rows}` — and whether
+  // it is being written. One at a time, whoever proposed it.
+  const [review, setReview] = useState(null);
   const [isApplyingChanges, setIsApplyingChanges] = useState(false);
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [messageModalContent, setMessageModalContent] = useState({ message: "", type: "info" });
@@ -229,6 +232,7 @@ const BookmarkApp = () => {
   // swept over several runs.
   const sweep = useLinkSweep({ bookmarks, storeRef, showMessage: showCustomMessage });
   const brokenCount = useMemo(() => bookmarks.filter(isBroken).length, [bookmarks]);
+  const archive = useArchiveRecovery({ showMessage: showCustomMessage });
   const showBrokenOnly = useCallback(
     () => setManualFilters((prev) => ({ ...prev, brokenOnly: true })),
     []
@@ -263,6 +267,22 @@ const BookmarkApp = () => {
       ),
     [plannedBookmarks, effectiveFilters]
   );
+
+  // #102: what a lookup would actually ask about — the dead links in the selection
+  // if there is one, otherwise the dead links on screen. Nothing offers to contact
+  // the archive when there is nothing to ask about.
+  // The archive question is asked about a selection when there is one, and one
+  // click on a bookmark is a selection — so this follows selectedIds rather than
+  // the multi-select list the bulk-edit bar works from.
+  const bookmarksInReach = useMemo(
+    () =>
+      selectedIds.length > 0
+        ? bookmarks.filter((b) => selectedIds.includes(b.id))
+        : displayedBookmarks,
+    [bookmarks, displayedBookmarks, selectedIds]
+  );
+
+  const deadLinksInReach = useMemo(() => recoverable(bookmarksInReach).length, [bookmarksInReach]);
 
   // #49: A view is "active" when the screen matches it, rather than because it was
   // the last one clicked — editing a filter afterwards should visibly leave it.
@@ -498,28 +518,36 @@ const BookmarkApp = () => {
         showCustomMessage("Nothing to change — these bookmarks are already organized.", "info");
         return;
       }
-      setProposedChanges(rows);
+      setReview({ title: "Review the proposed changes", rows });
     },
     [organizer]
   );
 
-  const handleApplyOrganize = useCallback(
+  // #102: a dead link is the one thing the sweep found and deliberately would not
+  // fix. Asking the archive is a separate, asked-for step, and it proposes rather
+  // than writes: the same review and the same one-undo write as a tidy-up.
+  const handleRecoverDeadLinks = useCallback(async () => {
+    const rows = await archive.run(bookmarksInReach);
+    if (rows.length > 0) setReview({ title: "Review the archived copies", rows });
+  }, [archive, bookmarksInReach]);
+
+  const handleApplyReviewed = useCallback(
     async (acceptedIds) => {
-      const patches = organizePatches(proposedChanges, acceptedIds);
+      const patches = acceptedPatches(review?.rows, acceptedIds);
       if (patches.length === 0) return;
       setIsApplyingChanges(true);
       try {
         await applyBulkEdit(patches);
-        setProposedChanges([]);
+        setReview(null);
         showCustomMessage(`Updated ${patches.length} bookmark(s).`, "success");
       } catch (e) {
-        console.error("Organize failed:", e);
+        console.error("Applying reviewed changes failed:", e);
         showCustomMessage("Failed to apply the changes. Please try again.", "error");
       } finally {
         setIsApplyingChanges(false);
       }
     },
-    [applyBulkEdit, proposedChanges]
+    [applyBulkEdit, review]
   );
 
   const showDigest = useCallback(async () => {
@@ -615,7 +643,7 @@ const BookmarkApp = () => {
     isHelpModalOpen ||
     isOptionsOpen ||
     isMessageModalOpen ||
-    proposedChanges.length > 0 ||
+    Boolean(review) ||
     Boolean(digest);
 
   useKeyboardShortcuts(
@@ -985,6 +1013,21 @@ const BookmarkApp = () => {
               >
                 {sweep.running ? "Stop Check" : "Check Links"}
               </Button>
+              {deadLinksInReach > 0 && (
+                <Button
+                  size="sm"
+                  intent="secondary"
+                  onClick={archive.running ? archive.stop : handleRecoverDeadLinks}
+                  title="Ask the Internet Archive for a saved copy of each dead link"
+                  // Without this the pointer-down clears the selection the button
+                  // is about, and the lookup silently widens to the whole view.
+                  {...keepsSelectionProps}
+                >
+                  {archive.running
+                    ? `Stop (${archive.done}/${archive.total})`
+                    : `Find Archived Copies (${deadLinksInReach})`}
+                </Button>
+              )}
               {lastAction && (
                 <Button size="sm" intent="ghost" onClick={resetSearch}>
                   Clear Search
@@ -1190,11 +1233,12 @@ const BookmarkApp = () => {
             onClose={() => setDigest(null)}
           />
         )}
-        {proposedChanges.length > 0 && (
-          <OrganizeReviewModal
-            rows={proposedChanges}
-            onApply={handleApplyOrganize}
-            onCancel={() => setProposedChanges([])}
+        {review && (
+          <ChangeReviewModal
+            rows={review.rows}
+            title={review.title}
+            onApply={handleApplyReviewed}
+            onCancel={() => setReview(null)}
             isApplying={isApplyingChanges}
           />
         )}

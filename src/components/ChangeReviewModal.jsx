@@ -2,15 +2,25 @@ import React, { useMemo, useState } from "react";
 
 import { Button, Modal, Tag } from "./DesignSystem.jsx";
 
-// #44: The diff a tidy-up is reviewed through.
+// The diff a proposed change is reviewed through.
 //
-// A model proposing changes to a hundred bookmarks is only useful if disagreeing
+// Something proposing changes to a hundred bookmarks is only useful if disagreeing
 // with it is cheap, so every row starts accepted, every row can be dropped on its
-// own, and nothing is written until Apply. The modal owns which rows are accepted
-// and nothing else: the rows were computed by utils/organizePlan.js and applying
-// them is the caller's business.
+// own, and nothing is written until Apply. That holds whether the proposal came
+// from a model tidying up (#44) or from an archive offering a copy of a dead link
+// (#102), which is why this renders `utils/changeReview.js` rows and knows nothing
+// about where they came from. It owns which rows are accepted and nothing else.
 
-const FIELD_LABELS = { tags: "Tags", folderId: "Folder", description: "Description" };
+const FIELD_LABELS = {
+  tags: "Tags",
+  folderId: "Folder",
+  description: "Description",
+  url: "Address",
+  urlStatus: "Link check",
+  unreachable: "Old broken flag",
+};
+
+const WAS = { idle: "not checked", valid: "reachable", invalid: "broken", ignored: "not checked" };
 
 const TagList = ({ tags, added = [] }) => {
   const isNew = new Set(added.map((tag) => tag.toLowerCase()));
@@ -26,6 +36,13 @@ const TagList = ({ tags, added = [] }) => {
   );
 };
 
+const Replaced = ({ from, to }) => (
+  <span className="break-all">
+    <span className="text-secondary-text line-through">{from}</span>{" "}
+    <span aria-hidden="true">→</span> <span className="text-primary-text">{to}</span>
+  </span>
+);
+
 const FieldDiff = ({ field, before, after }) => {
   if (field === "tags") {
     const gained = (after.tags || []).filter(
@@ -34,18 +51,23 @@ const FieldDiff = ({ field, before, after }) => {
     return <TagList tags={after.tags || []} added={gained} />;
   }
   if (field === "folderId") {
-    return (
-      <span>
-        <span className="text-secondary-text line-through">{before.folderId || "no folder"}</span>{" "}
-        <span aria-hidden="true">→</span>{" "}
-        <span className="text-primary-text">{after.folderId}</span>
-      </span>
-    );
+    return <Replaced from={before.folderId || "no folder"} to={after.folderId} />;
+  }
+  if (field === "url") return <Replaced from={before.url} to={after.url} />;
+  if (field === "unreachable") return <Replaced from="set" to="cleared" />;
+  if (field === "urlStatus") {
+    return <Replaced from={WAS[before.urlStatus] ?? before.urlStatus} to={WAS[after.urlStatus]} />;
   }
   return <span className="text-primary-text">{after.description}</span>;
 };
 
-const OrganizeReviewModal = ({ rows = [], onApply, onCancel, isApplying = false }) => {
+const ChangeReviewModal = ({
+  rows = [],
+  title = "Review the proposed changes",
+  onApply,
+  onCancel,
+  isApplying = false,
+}) => {
   const [rejected, setRejected] = useState(() => new Set());
 
   const accepted = useMemo(
@@ -65,7 +87,7 @@ const OrganizeReviewModal = ({ rows = [], onApply, onCancel, isApplying = false 
 
   return (
     <Modal
-      title="Review the proposed changes"
+      title={title}
       size="lg"
       onClose={onCancel}
       closeDisabled={isApplying}
@@ -130,4 +152,4 @@ const OrganizeReviewModal = ({ rows = [], onApply, onCancel, isApplying = false 
   );
 };
 
-export default React.memo(OrganizeReviewModal);
+export default React.memo(ChangeReviewModal);

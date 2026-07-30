@@ -470,7 +470,27 @@ the agent for your broken links) shows the results.
 - A broken link is never re-pointed automatically. Redirect targets come from the
   remote server, and following one from a privileged fetch is exactly the hole
   the URL checks are guarded against, so what to do about a dead link is left to
-  you: fix it in the form, or select the broken ones and delete them together.
+  you: recover it from an archive (below), fix it in the form, or select the broken
+  ones and delete them together.
+
+### Recovering a dead link
+
+Once a sweep has found dead links, **Find Archived Copies** appears beside **Check
+Links** and asks the Internet Archive whether it kept a copy of each one. It shows
+what it found as a diff — old address, snapshot address — and nothing is written
+until you accept it, one row at a time or all at once.
+
+- It only appears when there is something to ask about, and it asks about the dead
+  links you have selected, or the dead links on screen when nothing is selected. So
+  a folder, a search, or a multi-selection is how you scope it.
+- Asking contacts `archive.org`, one request per dead link, paced and capped per
+  run. Only public http(s) addresses are asked about: an internal hostname is not
+  something to hand to a third party.
+- The address that comes back is checked before it can be used — it has to be a
+  public https address on the archive's own host — because a snapshot address is a
+  remote server's claim like any other.
+- Accepting is one undo, however many links were re-pointed, and each recovered
+  bookmark is marked for re-checking rather than assumed good.
 
 ## The weekly digest
 
