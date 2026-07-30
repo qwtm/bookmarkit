@@ -1,11 +1,15 @@
-// background.js
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("bookmarkit extension installed.");
-});
+// background.js — the extension's privileged background surface: the ways in that
+// do not go through a page (omnibox, context menu), and the URL check that needs
+// to bypass CORS.
+//
+// This file is copied into the package verbatim, so it cannot import from src/.
+// Anything mirrored from the app says so at the point of duplication.
 
-// #51: the toolbar icon now opens the quick-add popup (action.default_popup in the
+// #51: the toolbar icon opens the quick-add popup (action.default_popup in the
 // manifest), so chrome.action.onClicked no longer fires and the old open-in-a-tab
-// listener is gone. The popup links out to the full app.
+// listener is gone. #52 adds the keyboard route to the same popup with an
+// _execute_action command, which Chrome dispatches itself — no listener here.
+// The popup links out to the full app.
 
 // #10: A host is private/loopback/link-local (or non-public). Mirrors
 // isPrivateOrLoopbackHost in src/utils/url.js (the service worker can't import
@@ -51,15 +55,21 @@ function isPrivateOrLoopbackHost(hostname) {
   return false;
 }
 
-function isPublicHttpUrl(raw) {
-  let u;
+// A URL we would be willing to open, or null. Mirrors isSafeHttpUrl in
+// src/utils/url.js. Bookmarking a private host is legitimate; fetching one from
+// this worker is not, which is why isPublicHttpUrl is the stricter of the two.
+function httpUrl(raw) {
   try {
-    u = new URL(raw);
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
   } catch {
-    return false;
+    return null;
   }
-  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-  return !isPrivateOrLoopbackHost(u.hostname);
+}
+
+function isPublicHttpUrl(raw) {
+  const url = httpUrl(raw);
+  return Boolean(url) && !isPrivateOrLoopbackHost(url.hostname);
 }
 
 // #48: How much of a page is read before the rest is dropped. Enough for a head
@@ -154,4 +164,110 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })
     .catch(() => sendResponse({ status: "invalid", redirectUrl: null }));
   return true; // keep message channel open for async response
+});
+
+// ─── Reading the collection ──────────────────────────────────────────────────
+// #52: The default store keeps its bookmarks in a "bookmarkit" folder on the
+// bookmarks bar (see chromeBookmarksStore). This worker reads that folder and
+// never creates it: the omnibox reads the collection, it does not own it. Tags
+// and ratings live in the app's own metadata, not in Chrome's tree, so they are
+// not available here and are not matched on.
+const ROOT_FOLDER_TITLE = "bookmarkit";
+const MAX_SUGGESTIONS = 8;
+
+async function collectionBookmarks() {
+  const [tree] = await chrome.bookmarks.getTree();
+  const bar = (tree.children || []).find((n) => n.id === "1" || n.title === "Bookmarks bar");
+  const root = (bar?.children || []).find((n) => !n.url && n.title === ROOT_FOLDER_TITLE);
+  if (!root) return [];
+
+  const found = [];
+  const walk = (node) => {
+    if (node.url) found.push(node);
+    (node.children || []).forEach(walk);
+  };
+  walk((await chrome.bookmarks.getSubTree(root.id))[0]);
+  return found;
+}
+
+// Every word has to appear somewhere in the title or the address, so typing more
+// narrows rather than widens. Deliberately not the app's searchBookmarks: that
+// also reads description and tags, which this surface cannot see, and an address
+// bar that waited on anything would feel broken.
+function matchBookmarks(query, bookmarks) {
+  const terms = String(query || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (terms.length === 0) return [];
+  return bookmarks
+    .filter((bookmark) => {
+      const haystack = `${bookmark.title || ""} ${bookmark.url || ""}`.toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    })
+    .slice(0, MAX_SUGGESTIONS);
+}
+
+// ─── Omnibox: "bm <query>" ───────────────────────────────────────────────────
+// Suggestion descriptions are parsed as XML by Chrome, so a title containing
+// & or < would otherwise break the whole suggestion list.
+const XML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
+function escapeXml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => XML_ESCAPES[c]);
+}
+
+chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
+  const found = matchBookmarks(text, await collectionBookmarks());
+  chrome.omnibox.setDefaultSuggestion({
+    description:
+      found.length > 0
+        ? `bookmarkit — ${found.length} match${found.length === 1 ? "" : "es"} for "${escapeXml(text)}"`
+        : `bookmarkit — nothing saved matches "${escapeXml(text)}"`,
+  });
+  suggest(
+    found.map((bookmark) => ({
+      content: bookmark.url,
+      description: `<match>${escapeXml(bookmark.title || bookmark.url)}</match> <dim>${escapeXml(bookmark.url)}</dim>`,
+    }))
+  );
+});
+
+chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
+  // Enter on a suggestion hands back that bookmark's address. Enter on the typed
+  // query means no suggestion was picked, so the best match is what was meant.
+  const url = httpUrl(text) ? text : matchBookmarks(text, await collectionBookmarks())[0]?.url;
+  if (!url) return;
+  if (disposition === "newForegroundTab") await chrome.tabs.create({ url });
+  else if (disposition === "newBackgroundTab") await chrome.tabs.create({ url, active: false });
+  else await chrome.tabs.update({ url });
+});
+
+// ─── Context menu: bookmark this page, or this link ──────────────────────────
+// The action popup cannot be opened from here, so quick add is opened as its own
+// small window with the target in the query string. That is also the only way to
+// bookmark a link: its address is not the active tab's.
+const QUICK_ADD_MENU_ID = "bookmarkit-quick-add";
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: QUICK_ADD_MENU_ID,
+    title: "Bookmark with bookmarkit",
+    contexts: ["page", "link"],
+  });
+});
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== QUICK_ADD_MENU_ID) return;
+  const onALink = Boolean(info.linkUrl);
+  const url = onALink ? info.linkUrl : info.pageUrl || tab?.url;
+  if (!httpUrl(url)) return;
+
+  const target = new URL(chrome.runtime.getURL("popup.html"));
+  target.searchParams.set("url", url);
+  // A link's text is the best title available for it; the page's own title is
+  // wrong for a link and the popup would rather fall back to the address.
+  const title = onALink ? info.selectionText || "" : tab?.title || "";
+  if (title) target.searchParams.set("title", title);
+
+  await chrome.windows.create({ url: target.href, type: "popup", width: 400, height: 560 });
 });
