@@ -93,6 +93,30 @@ describe("parseNetscapeHtml (#40)", () => {
   });
 });
 
+// A JSON import writes tags through as the file gave them, so a stored bookmark
+// can carry a string. The export used to call .join on it and throw, which took
+// the Import/Export dialog down with it.
+describe("export with loosely typed tags", () => {
+  it("accepts tags stored as a comma-separated string", () => {
+    const html = generateNetscapeHtml([bookmark({ tags: "react, perf" })]);
+
+    expect(html).toContain('TAGS="react,perf"');
+    expect(parseNetscapeHtml(html)[0].tags).toEqual(["react", "perf"]);
+  });
+
+  it("omits the attribute for tags it cannot read", () => {
+    for (const tags of [undefined, null, 42, {}, "", "  ,  "]) {
+      expect(generateNetscapeHtml([bookmark({ tags })])).not.toContain("TAGS=");
+    }
+  });
+
+  it("drops empty entries from an array of tags", () => {
+    expect(generateNetscapeHtml([bookmark({ tags: ["react", "", "  ", "perf"] })])).toContain(
+      'TAGS="react,perf"'
+    );
+  });
+});
+
 describe("export/import round trip (#40)", () => {
   it("preserves folders, tags, and rating through export and re-import", () => {
     const original = [
