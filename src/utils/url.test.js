@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { isSafeHttpUrl, isPrivateOrLoopbackHost, isPublicHttpUrl, escapeHtml } from "./url.js";
+import {
+  isSafeHttpUrl,
+  isPrivateOrLoopbackHost,
+  isPublicHttpUrl,
+  escapeHtml,
+  normalizeUrl,
+} from "./url.js";
 
 describe("isSafeHttpUrl (#11)", () => {
   it("accepts http and https", () => {
@@ -66,6 +72,41 @@ describe("isPublicHttpUrl (#10)", () => {
     expect(isPublicHttpUrl("http://localhost")).toBe(false);
     expect(isPublicHttpUrl("javascript:alert(1)")).toBe(false);
     expect(isPublicHttpUrl("https://169.254.169.254/latest/meta-data")).toBe(false);
+  });
+});
+
+describe("normalizeUrl (#45)", () => {
+  it("collapses scheme, www., and a trailing slash", () => {
+    const expected = "example.com/post";
+    expect(normalizeUrl("http://example.com/post")).toBe(expected);
+    expect(normalizeUrl("https://example.com/post")).toBe(expected);
+    expect(normalizeUrl("https://www.example.com/post/")).toBe(expected);
+    expect(normalizeUrl("  HTTPS://WWW.EXAMPLE.COM/post  ")).toBe(expected);
+  });
+
+  it("strips tracking parameters and sorts what remains", () => {
+    expect(normalizeUrl("https://example.com/p?utm_source=x&utm_medium=y&id=7")).toBe(
+      "example.com/p?id=7"
+    );
+    expect(normalizeUrl("https://example.com/p?fbclid=a&gclid=b&ref=twitter")).toBe(
+      "example.com/p"
+    );
+    expect(normalizeUrl("https://example.com/p?b=2&a=1")).toBe(
+      normalizeUrl("https://example.com/p?a=1&b=2")
+    );
+  });
+
+  it("keeps path case, the fragment, and a non-default port", () => {
+    expect(normalizeUrl("https://example.com/Path")).toBe("example.com/Path");
+    expect(normalizeUrl("https://example.com/p#install")).toBe("example.com/p#install");
+    expect(normalizeUrl("https://example.com:8443/p")).toBe("example.com:8443/p");
+    expect(normalizeUrl("https://example.com:443/p")).toBe("example.com/p");
+  });
+
+  it("falls back to the trimmed text when the url will not parse", () => {
+    expect(normalizeUrl("  Example.com/a ")).toBe("example.com/a");
+    expect(normalizeUrl("")).toBe("");
+    expect(normalizeUrl(null)).toBe("");
   });
 });
 

@@ -243,6 +243,12 @@ Bookmark JSON shape (id is optional on import):
 
 The agent plans actions (search, filter, sort, limit, persist reorder) and updates the view accordingly.
 
+Two bookmarks count as duplicates when they point at the same page, whatever
+they are titled: `http` and `https`, `www.` and bare, a trailing slash, and
+tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, and similar) are all
+ignored. Path, remaining query, and fragment still distinguish pages. When
+copies differ, the one carrying tags, a rating, or a description is the one kept.
+
 ## Keyboard shortcuts
 
 - Click: select a bookmark

@@ -1,4 +1,5 @@
-// URL and HTML safety helpers shared across the app.
+// URL helpers shared across the app: navigation safety, canonical identity, and
+// HTML escaping.
 
 // #11: Only http(s) URLs are safe to navigate to or import. This blocks
 // javascript:, data:, file:, blob:, chrome:, etc. which can execute code or
@@ -72,6 +73,57 @@ export function isPublicHttpUrl(url) {
   } catch {
     return false;
   }
+}
+
+// #45: Query parameters that identify a campaign or a click rather than a
+// resource. Two URLs differing only by these point at the same page.
+const TRACKING_PARAMS = new Set([
+  "fbclid",
+  "gclid",
+  "dclid",
+  "msclkid",
+  "twclid",
+  "yclid",
+  "igshid",
+  "mc_cid",
+  "mc_eid",
+  "ref",
+  "ref_src",
+]);
+
+const isTrackingParam = (name) => name.startsWith("utm_") || TRACKING_PARAMS.has(name);
+
+/**
+ * #45: Reduce a URL to the page it identifies, so incidental differences do not
+ * read as different bookmarks. Drops the scheme (http/https are the same page),
+ * lowercases and de-`www.`s the host, removes tracking parameters, sorts the
+ * rest, and strips a trailing slash. The path, remaining query, and fragment
+ * keep their case — those are meaningful to the server.
+ *
+ * The result is an identity key, not a navigable URL.
+ * @param {string} url
+ * @returns {string}
+ */
+export function normalizeUrl(url) {
+  if (typeof url !== "string") return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  let parsed;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    // Not parseable (a bare "example.com/a", say) — fall back to the raw text so
+    // identical strings still match each other.
+    return trimmed.toLowerCase();
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^www\./u, "");
+  const port = parsed.port ? `:${parsed.port}` : "";
+  const path = parsed.pathname.replace(/\/$/u, "");
+  const kept = [...parsed.searchParams.entries()]
+    .filter(([name]) => !isTrackingParam(name))
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  const search = new URLSearchParams(kept).toString();
+  return `${host}${port}${path}${search ? `?${search}` : ""}${parsed.hash}`;
 }
 
 // #12: Escape a value for safe interpolation into HTML text or a double-quoted
