@@ -406,11 +406,12 @@ const OptionsModal = ({
                 className="mt-0.5 accent-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
               />
               <span>
-                Load site icons from Google
+                Load site icons from the web
                 <span className="block text-xs text-secondary-text">
-                  Off by default. When on, every bookmark you can see sends its domain to google.com
-                  to fetch an icon. Bookmarkit shows a neutral placeholder otherwise, and uses your
-                  browser&rsquo;s own icon cache when the extension can.
+                  Off by default: no icon is fetched over the network. Bookmarkit uses your
+                  browser&rsquo;s own icon cache when the extension can, and a neutral placeholder
+                  otherwise. When on, each visible bookmark fetches its icon &mdash; from the
+                  address saved with it, or from google.com by domain when it has none.
                 </span>
               </span>
             </label>

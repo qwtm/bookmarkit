@@ -59,4 +59,42 @@ describe("faviconSrc", () => {
   it("honors a requested size", () => {
     expect(faviconSrc("https://example.com", { allowRemote: true, size: 64 })).toContain("sz=64");
   });
+
+  // An icon address saved on a bookmark is not automatically safe: an imported
+  // Netscape ICON attribute, or a google.com/s2 URL an older version persisted,
+  // is someone else's server.
+  describe("an icon address saved on the bookmark", () => {
+    it("is not fetched while the opt-in is off", () => {
+      for (const storedIcon of [
+        "https://www.google.com/s2/favicons?domain=example.com&sz=32",
+        "https://tracker.example/pixel.png",
+        "https://example.com/favicon.ico",
+      ]) {
+        expect(faviconSrc("https://example.com/page", { storedIcon })).toBe(FAVICON_PLACEHOLDER);
+      }
+    });
+
+    it("wins over a derived icon once fetching is allowed", () => {
+      expect(
+        faviconSrc("https://example.com/page", {
+          storedIcon: "https://example.com/custom.png",
+          allowRemote: true,
+        })
+      ).toBe("https://example.com/custom.png");
+    });
+
+    it("is shown even with the opt-in off when it is inline data", () => {
+      const inline = "data:image/png;base64,iVBORw0KGgo=";
+      expect(faviconSrc("https://example.com/page", { storedIcon: inline })).toBe(inline);
+    });
+
+    it("is refused when it is not an http(s) address", () => {
+      expect(
+        faviconSrc("https://example.com/page", {
+          storedIcon: "javascript:alert(1)",
+          allowRemote: true,
+        })
+      ).not.toContain("javascript:");
+    });
+  });
 });
