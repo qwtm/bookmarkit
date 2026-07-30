@@ -3,13 +3,56 @@
 
 const ROOT_FOLDER_TITLE = "bookmarkit";
 
+// #14: Chrome reports one event per touched node, so a change made elsewhere
+// (the bookmark manager, another extension) arrives as a burst. Coalesce the
+// burst into a single tree walk. Mirrors the debounce in localCompositeStore.
+const EXTERNAL_NOTIFY_DEBOUNCE_MS = 50;
+
 export function createChromeBookmarksStore() {
   let listeners = new Set();
   let unsubscribeFns = [];
+  // Depth of writes we are making ourselves. Every one of those writes notifies
+  // once when it finishes, so the events Chrome echoes back while it is in
+  // flight carry no information a listener does not already receive — and each
+  // echo used to cost a full recursive tree walk, making an N-item import O(N²).
+  let mutationDepth = 0;
+  let notifyTimer = null;
 
   const notify = async () => {
+    if (notifyTimer) {
+      clearTimeout(notifyTimer);
+      notifyTimer = null;
+    }
     const all = await api.list();
     listeners.forEach((cb) => cb(all));
+  };
+
+  const scheduleNotify = () => {
+    if (notifyTimer) clearTimeout(notifyTimer);
+    notifyTimer = setTimeout(() => {
+      notifyTimer = null;
+      notify();
+    }, EXTERNAL_NOTIFY_DEBOUNCE_MS);
+  };
+
+  /**
+   * Run one of our own writes, then notify subscribers exactly once. Nested
+   * calls (persistSortedOrder → reorderBookmarks) collapse into the outermost
+   * notify. A write that throws may still have changed part of the tree, so it
+   * falls back to the coalesced notify rather than leaving listeners stale.
+   */
+  const mutate = async (write) => {
+    mutationDepth += 1;
+    try {
+      const result = await write();
+      if (mutationDepth === 1) await notify();
+      return result;
+    } catch (error) {
+      if (mutationDepth === 1) scheduleNotify();
+      throw error;
+    } finally {
+      mutationDepth -= 1;
+    }
   };
 
   const ensureRootFolder = async () => {
@@ -85,7 +128,10 @@ export function createChromeBookmarksStore() {
   };
 
   const subscribeChromeEvents = () => {
-    const onChange = () => notify();
+    const onChange = () => {
+      if (mutationDepth > 0) return;
+      scheduleNotify();
+    };
     chrome.bookmarks.onCreated.addListener(onChange);
     chrome.bookmarks.onRemoved.addListener(onChange);
     chrome.bookmarks.onChanged.addListener(onChange);
@@ -112,29 +158,30 @@ export function createChromeBookmarksStore() {
      * preserving their relative order.
      */
     async reorderBookmarks(orderedIds = []) {
-      const rootId = await ensureRootFolder();
-      const children = await chrome.bookmarks.getChildren(rootId);
-      // Only bookmark nodes (exclude folders)
-      const bookmarkChildren = children.filter((n) => n.url);
-      const existingIds = bookmarkChildren.map((n) => n.id);
-      const set = new Set(orderedIds);
-      const normalized = [
-        // Keep only ids that exist under root
-        ...orderedIds.filter((id) => set.has(id) && existingIds.includes(id)),
-        // Append the rest (not specified), preserving current order
-        ...existingIds.filter((id) => !set.has(id)),
-      ];
-      // Sequentially move each node to its index
-      for (let i = 0; i < normalized.length; i++) {
-        const id = normalized[i];
-        try {
-          await chrome.bookmarks.move(id, { parentId: rootId, index: i });
-        } catch (e) {
-          // Ignore move errors for individual items to keep best-effort ordering
-          console.warn("Failed to move bookmark", id, e);
+      await mutate(async () => {
+        const rootId = await ensureRootFolder();
+        const children = await chrome.bookmarks.getChildren(rootId);
+        // Only bookmark nodes (exclude folders)
+        const bookmarkChildren = children.filter((n) => n.url);
+        const existingIds = bookmarkChildren.map((n) => n.id);
+        const set = new Set(orderedIds);
+        const normalized = [
+          // Keep only ids that exist under root
+          ...orderedIds.filter((id) => set.has(id) && existingIds.includes(id)),
+          // Append the rest (not specified), preserving current order
+          ...existingIds.filter((id) => !set.has(id)),
+        ];
+        // Sequentially move each node to its index
+        for (let i = 0; i < normalized.length; i++) {
+          const id = normalized[i];
+          try {
+            await chrome.bookmarks.move(id, { parentId: rootId, index: i });
+          } catch (e) {
+            // Ignore move errors for individual items to keep best-effort ordering
+            console.warn("Failed to move bookmark", id, e);
+          }
         }
-      }
-      await notify();
+      });
     },
     /**
      * Persist a sorted order by sortBy and order for all bookmarks under the root folder.
@@ -174,79 +221,82 @@ export function createChromeBookmarksStore() {
       listeners.clear();
     },
     async create(bookmark) {
-      let parentId = await ensureFolderPath(
-        typeof bookmark.folderId === "string" ? bookmark.folderId : ""
-      );
-      const node = await chrome.bookmarks.create({
-        parentId,
-        title: bookmark.title || bookmark.url,
-        url: bookmark.url,
+      const node = await mutate(async () => {
+        const parentId = await ensureFolderPath(
+          typeof bookmark.folderId === "string" ? bookmark.folderId : ""
+        );
+        return chrome.bookmarks.create({
+          parentId,
+          title: bookmark.title || bookmark.url,
+          url: bookmark.url,
+        });
       });
-      await notify();
       // Compute path by walking up to root (optional) or reuse provided path for performance
       const folderPath =
         (typeof bookmark.folderId === "string" ? bookmark.folderId.trim() : "") || "";
       return toBookmark(node, folderPath);
     },
     async update(id, patch) {
-      const changes = {};
-      if (patch.title) changes.title = patch.title;
-      if (patch.url) changes.url = patch.url;
-      if (Object.keys(changes).length > 0) {
-        await chrome.bookmarks.update(id, changes);
-      }
-      // Handle moving to a folder when folderId (treated as a folder path label) is provided
-      if (Object.prototype.hasOwnProperty.call(patch, "folderId")) {
-        const folderPath = typeof patch.folderId === "string" ? patch.folderId.trim() : "";
-        try {
-          if (folderPath) {
-            const parentId = await ensureFolderPath(folderPath);
-            await chrome.bookmarks.move(id, { parentId });
-          } else {
-            // Empty string means move back to root
-            const rootId = await ensureRootFolder();
-            await chrome.bookmarks.move(id, { parentId: rootId });
-          }
-        } catch (e) {
-          // Ignore move errors to avoid breaking update
-          console.warn("Failed to move bookmark to folder path", folderPath, e);
+      await mutate(async () => {
+        const changes = {};
+        if (patch.title) changes.title = patch.title;
+        if (patch.url) changes.url = patch.url;
+        if (Object.keys(changes).length > 0) {
+          await chrome.bookmarks.update(id, changes);
         }
-      }
-      await notify();
+        // Handle moving to a folder when folderId (treated as a folder path label) is provided
+        if (Object.prototype.hasOwnProperty.call(patch, "folderId")) {
+          const folderPath = typeof patch.folderId === "string" ? patch.folderId.trim() : "";
+          try {
+            if (folderPath) {
+              const parentId = await ensureFolderPath(folderPath);
+              await chrome.bookmarks.move(id, { parentId });
+            } else {
+              // Empty string means move back to root
+              const rootId = await ensureRootFolder();
+              await chrome.bookmarks.move(id, { parentId: rootId });
+            }
+          } catch (e) {
+            // Ignore move errors to avoid breaking update
+            console.warn("Failed to move bookmark to folder path", folderPath, e);
+          }
+        }
+      });
     },
     async remove(id) {
-      await chrome.bookmarks.remove(id);
-      await notify();
+      await mutate(() => chrome.bookmarks.remove(id));
     },
     async removeMany(ids = []) {
       // Delete in parallel; ignore per-item failures, then notify once
-      await Promise.all((ids || []).map((id) => chrome.bookmarks.remove(id).catch(() => {})));
-      await notify();
+      await mutate(() =>
+        Promise.all((ids || []).map((id) => chrome.bookmarks.remove(id).catch(() => {})))
+      );
     },
     async bulkReplace(bookmarks) {
-      const rootId = await ensureRootFolder();
-      const children = await chrome.bookmarks.getChildren(rootId);
-      // PERF-02: Parallelize bookmark removal, then parallel creation
-      await Promise.all(
-        children.filter((c) => c.url).map((c) => chrome.bookmarks.remove(c.id).catch(() => {}))
-      );
-      const createdNodes = await Promise.all(
-        bookmarks.map((b) =>
-          chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
-        )
-      );
-      await notify();
-      return createdNodes;
+      return mutate(async () => {
+        const rootId = await ensureRootFolder();
+        const children = await chrome.bookmarks.getChildren(rootId);
+        // PERF-02: Parallelize bookmark removal, then parallel creation
+        await Promise.all(
+          children.filter((c) => c.url).map((c) => chrome.bookmarks.remove(c.id).catch(() => {}))
+        );
+        return Promise.all(
+          bookmarks.map((b) =>
+            chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
+          )
+        );
+      });
     },
     async bulkAdd(bookmarks) {
-      const rootId = await ensureRootFolder();
-      // PERF-02: Create all bookmarks in parallel instead of sequentially
-      const createdNodes = await Promise.all(
-        bookmarks.map((b) =>
-          chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
-        )
-      );
-      await notify();
+      const createdNodes = await mutate(async () => {
+        const rootId = await ensureRootFolder();
+        // PERF-02: Create all bookmarks in parallel instead of sequentially
+        return Promise.all(
+          bookmarks.map((b) =>
+            chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
+          )
+        );
+      });
       return createdNodes.map((n) => toBookmark(n));
     },
   };

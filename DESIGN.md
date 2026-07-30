@@ -61,6 +61,13 @@ every backend listener `init()` registered, because a store instance is created
 per mount rather than shared. New UI paths should depend on that behavior
 through `useBookmarkStore`, not detect or call a backend directly.
 
+A store write notifies subscribers once, when the whole write is done. Chrome
+reports bookmark changes one event per touched node, and reading the list means
+walking the tree, so treating each event as a change made an N-item write cost N
+walks. `chromeBookmarksStore` ignores the events its own writes echo back and
+coalesces bursts it did not cause. Anything added to a store must keep that
+property: one write, one notification, whatever its size.
+
 ## LLM boundary
 
 Provider adapters in `src/llm/providers/` expose `generate(prompt)` through the

@@ -1,18 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { installFakeChromeBookmarks } from "../test/fakeChromeBookmarks.js";
 import { createChromeBookmarksStore } from "./chromeBookmarksStore.js";
 
-let fake;
-
-beforeEach(() => {
-  fake = installFakeChromeBookmarks();
-});
-
-afterEach(() => {
-  delete globalThis.chrome;
-});
+const manyBookmarks = (count) =>
+  Array.from({ length: count }, (_, i) => ({
+    title: `Bookmark ${i}`,
+    url: `https://example.com/${i}`,
+  }));
 
 describe("teardown (#19)", () => {
+  let fake;
+
+  beforeEach(() => {
+    fake = installFakeChromeBookmarks();
+  });
+
+  afterEach(() => {
+    delete globalThis.chrome;
+  });
+
   it("removes the chrome.bookmarks listeners registered by init", async () => {
     const store = createChromeBookmarksStore();
     await store.init();
@@ -45,5 +51,81 @@ describe("teardown (#19)", () => {
 
     expect(fake.listenerCount).toBe(4);
     second.teardown();
+  });
+});
+
+describe("chromeBookmarksStore notification batching (#14)", () => {
+  let fake;
+  let store;
+  let emissions;
+
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    fake = installFakeChromeBookmarks();
+    store = createChromeBookmarksStore();
+    await store.init();
+    emissions = [];
+    store.subscribe((all) => emissions.push(all.length));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete globalThis.chrome;
+  });
+
+  // Chrome fires one event per touched node and every event used to trigger a
+  // full recursive tree walk, so importing N bookmarks cost N walks.
+  it("emits once for a bulk add, not once per bookmark", async () => {
+    await store.bulkAdd(manyBookmarks(50));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emissions).toEqual([50]);
+  });
+
+  it("emits once for a bulk replace that removes and recreates everything", async () => {
+    await store.bulkAdd(manyBookmarks(20));
+    emissions.length = 0;
+    await store.bulkReplace(manyBookmarks(30));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emissions).toEqual([30]);
+  });
+
+  it("emits once for a multi-delete", async () => {
+    const created = await store.bulkAdd(manyBookmarks(10));
+    emissions.length = 0;
+    await store.removeMany(created.slice(0, 6).map((b) => b.id));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emissions).toEqual([4]);
+  });
+
+  it("emits once for a reorder, which moves every node in turn", async () => {
+    const created = await store.bulkAdd(manyBookmarks(15));
+    emissions.length = 0;
+    await store.reorderBookmarks([...created].reverse().map((b) => b.id));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emissions).toEqual([15]);
+  });
+
+  it("emits once when a sort persists through a nested reorder", async () => {
+    await store.bulkAdd(manyBookmarks(12));
+    emissions.length = 0;
+    await store.persistSortedOrder({ sortBy: "title", order: "desc" });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emissions).toEqual([12]);
+  });
+
+  it("still reports changes made outside the store, coalesced into one emission", async () => {
+    // A burst from the bookmark manager or another extension: many events, one walk.
+    for (let i = 0; i < 5; i++) fake.bookmarks.onCreated.dispatch("x", {});
+    expect(emissions).toEqual([]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emissions).toEqual([0]);
+  });
+
+  it("still reports the tree after a write that throws part way", async () => {
+    const created = await store.bulkAdd(manyBookmarks(3));
+    emissions.length = 0;
+    await expect(store.remove("no-such-id")).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(emissions).toEqual([created.length]);
   });
 });
