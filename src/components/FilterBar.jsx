@@ -3,18 +3,8 @@
 // convenience layer on top of these same primitives, not a prerequisite for them.
 
 import React, { useMemo, useState } from "react";
-import { TAG_STATE, getTagState, hasActiveFilters } from "../utils/manualFilters.js";
+import { SORT_FIELDS, TAG_STATE, getTagState, hasActiveFilters } from "../utils/manualFilters.js";
 import { Button, Input, Select } from "./DesignSystem.jsx";
-
-const SORT_FIELDS = [
-  { value: "", label: "Default order" },
-  { value: "title", label: "Title" },
-  { value: "url", label: "URL" },
-  { value: "rating", label: "Rating" },
-  { value: "folderId", label: "Folder" },
-  { value: "createdAt", label: "Date added" },
-  { value: "updatedAt", label: "Date modified" },
-];
 
 const VISIBLE_TAG_LIMIT = 12;
 

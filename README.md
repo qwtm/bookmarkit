@@ -15,6 +15,9 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
 
 ## Features
 
+- Saved views
+  - Name what is on screen — an agent plan, manual filters, or both — and return
+    to it from a chip
 - Natural language search (AI agent)
   - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”
   - Persist sorted order across all bookmarks (e.g., “reorder descending by title”). A saved order
@@ -295,6 +298,24 @@ before.
 - Cmd/Ctrl+D or D: delete selected (with confirmation)
 - Space (on focused tile): select/open depending on context
 - Cmd/Ctrl+Z: undo the last change
+
+## Saved views
+
+Anything you can narrow the list down to can be named and kept. Once a search or
+a filter is active, **Save current view** appears above the list; saved views
+become chips you can click to return to them, and the chip for the view you are
+currently looking at is highlighted.
+
+A view remembers both halves of the screen: the agent's plan and the manual
+filters. It is stored under `bm_smart_views` in the extension's local storage
+(`localStorage` in the web build), and it holds only the plan and the filters —
+no bookmark data.
+
+Views are read back as untrusted data. A stored plan goes through the same
+whitelist an AI response does, so a view that was hand-edited, imported, or
+written by a newer version cannot introduce an action this version does not know.
+Anything unrecognised is dropped, and a view left with nothing to restore
+disappears rather than becoming a chip that does nothing.
 
 ## Bulk editing
 
