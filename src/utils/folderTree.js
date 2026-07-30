@@ -123,6 +123,21 @@ export function findInFolder(folder, list = []) {
   return list.filter((b) => isWithinFolder(b?.folderId, folder));
 }
 
+/**
+ * Where a folder filter should point after the folder it names moved.
+ *
+ * A rename rewrites bookmarks, not the filter, so a view filtered to `Work` after
+ * `Work` became `Archive/Work` would match nothing and highlight no row. The filter
+ * follows the move — including from inside the subtree, since `Work/Project` moved
+ * too — and is left alone when it names something else. Dissolving a top-level
+ * folder answers `""`: its contents are at the root now, and the root is everything.
+ */
+export function followFolderMove(active, from, to) {
+  if (active === UNFILED || !isWithinFolder(active, from)) return active;
+  const rest = folderSegments(active).slice(folderSegments(from).length);
+  return asFolderPath([...folderSegments(to), ...rest]);
+}
+
 /** Patches moving the named bookmarks into a folder, skipping those already there. */
 export function moveToFolderPatches(list = [], ids = [], folder = "") {
   const wanted = new Set(ids);

@@ -195,6 +195,14 @@ Three consequences that shape the code:
 Paths compare case-insensitively, matching the organizer's folder cleaning (#44):
 one folder shown twice would split its count and filter as its own sibling.
 
+Two things follow from the filter being ordinary state rather than the tree's own:
+a rename has to carry the filter with it (`followFolderMove`), or the view would
+filter on a path no bookmark has any more, and selecting a folder clears the
+multi-selection. The pane is marked as keeping the selection so the selected set can
+be dragged into a folder, which makes filtering from it the one gesture that has to
+drop it — a selection the new filter hides is a bulk edit aimed at bookmarks nobody
+can see.
+
 `FolderTree.jsx` holds only what a tree needs to be operated — what is collapsed,
 what is being renamed, what a drop is carrying — and hands paths and ids outward.
 It knows nothing about stores, patches or undo.

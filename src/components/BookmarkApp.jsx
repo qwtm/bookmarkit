@@ -11,8 +11,10 @@ import {
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
 import {
   dissolveFolderPatches,
+  followFolderMove,
   folderPaths,
   moveToFolderPatches,
+  parentFolder,
   renameFolderPatches,
 } from "../utils/folderTree.js";
 import { isBroken } from "../utils/linkHealth.js";
@@ -308,13 +310,15 @@ const BookmarkApp = () => {
   // path, and makes each gesture a single undo entry however many bookmarks moved.
   const applyFolderChange = useCallback(
     async (patches, describe) => {
-      if (patches.length === 0) return;
+      if (patches.length === 0) return false;
       try {
         await applyBulkEdit(patches);
         showCustomMessage(describe(patches.length), "success");
+        return true;
       } catch (e) {
         console.error("Folder change failed:", e);
         showCustomMessage("Failed to move the bookmark(s). Please try again.", "error");
+        return false;
       }
     },
     [applyBulkEdit]
@@ -329,28 +333,44 @@ const BookmarkApp = () => {
     [applyFolderChange, bookmarks]
   );
 
+  // A filter naming a folder that just moved would match nothing, so it follows.
+  const followFolder = useCallback((from, to) => {
+    setManualFilters((prev) => ({ ...prev, folder: followFolderMove(prev.folder, from, to) }));
+  }, []);
+
   // Renaming and renesting are the same write: both replace a path prefix.
   const handleRenameFolder = useCallback(
-    (from, to) =>
-      applyFolderChange(
+    async (from, to) => {
+      const moved = await applyFolderChange(
         renameFolderPatches(bookmarks, from, to),
         (count) => `${count} bookmark(s) now in ${to || "no folder"}.`
-      ),
-    [applyFolderChange, bookmarks]
+      );
+      if (moved) followFolder(from, to);
+    },
+    [applyFolderChange, bookmarks, followFolder]
   );
 
   const handleDeleteFolder = useCallback(
-    (path) =>
-      applyFolderChange(
+    async (path) => {
+      const moved = await applyFolderChange(
         dissolveFolderPatches(bookmarks, path),
         (count) => `Removed ${path} and moved ${count} bookmark(s) out of it.`
-      ),
-    [applyFolderChange, bookmarks]
+      );
+      if (moved) followFolder(path, parentFolder(path));
+    },
+    [applyFolderChange, bookmarks, followFolder]
   );
 
-  const selectFolder = useCallback((folder) => {
-    setManualFilters((prev) => ({ ...prev, folder }));
-  }, []);
+  // The pane keeps the selection alive so it can be dragged, which makes filtering
+  // from it the one gesture that has to drop it: a selection the folder hides is a
+  // bulk edit aimed at bookmarks nobody can see.
+  const selectFolder = useCallback(
+    (folder) => {
+      clearSelectedBookmarks();
+      setManualFilters((prev) => ({ ...prev, folder }));
+    },
+    [clearSelectedBookmarks]
+  );
 
   // A dragged card carries the selection it belongs to, and only itself otherwise.
   const handleBookmarkDragStart = useCallback(

@@ -7,6 +7,7 @@ import {
   folderName,
   folderPaths,
   folderSegments,
+  followFolderMove,
   isWithinFolder,
   moveToFolderPatches,
   normalizeFolderPath,
@@ -176,6 +177,32 @@ describe("renameFolderPatches (#55)", () => {
 
   it("writes nothing when the name is the one it already has", () => {
     expect(renameFolderPatches(list, "Work", "work")).toEqual([]);
+  });
+});
+
+// A rename rewrites bookmarks; a filter naming the old path would then match
+// nothing and highlight no row, so it has to follow the move.
+describe("followFolderMove (#55)", () => {
+  it("follows the folder it names", () => {
+    expect(followFolderMove("Work", "Work", "Archive/Work")).toBe("Archive/Work");
+  });
+
+  it("follows from inside the subtree, which moved too", () => {
+    expect(followFolderMove("Work/Project A", "Work", "Archive/Work")).toBe(
+      "Archive/Work/Project A"
+    );
+  });
+
+  it("leaves a filter naming something else alone", () => {
+    expect(followFolderMove("Personal", "Work", "Archive/Work")).toBe("Personal");
+    expect(followFolderMove("Wor", "Work", "Archive/Work")).toBe("Wor");
+    expect(followFolderMove("", "Work", "Archive/Work")).toBe("");
+    expect(followFolderMove(UNFILED, "Work", "Archive/Work")).toBe(UNFILED);
+  });
+
+  it("answers with everything when a top-level folder dissolves", () => {
+    // Its bookmarks are at the root now, and the root is everything.
+    expect(followFolderMove("Work", "Work", "")).toBe("");
   });
 });
 
