@@ -37,7 +37,12 @@ export function useBookmarkStore() {
             : STORE_TYPES.LOCAL;
         const s = await getStore(preferred, { firebaseConfig, appId, initialAuthToken });
         await s.init();
-        if (cancelled) return;
+        // #19: An unmount during init still has to release the store's backend
+        // listeners, which init() has already registered by this point.
+        if (cancelled) {
+          s.teardown?.();
+          return;
+        }
         storeRef.current = s;
         const data = await s.list();
         if (cancelled) return;
@@ -50,6 +55,8 @@ export function useBookmarkStore() {
       return () => {
         cancelled = true;
         unsub?.();
+        storeRef.current?.teardown?.();
+        storeRef.current = null;
       };
     },
     []
