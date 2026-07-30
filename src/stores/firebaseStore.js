@@ -24,8 +24,8 @@ import { chunk, MAX_FIRESTORE_BATCH_OPS } from "./batching.js";
 
 export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken }) {
   let listeners = new Set();
-  // TODO(#19): the returned unsubscribe is never called on teardown — listener leak.
-  let unsubSnapshot = null; // eslint-disable-line no-unused-vars
+  let unsubSnapshot = null;
+  let unsubAuth = null;
   let db = null;
   let auth = null;
   let userId = null;
@@ -53,10 +53,13 @@ export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken })
       auth = getAuth(app);
       db = getFirestore(app);
       await new Promise((resolve) => {
-        const unsub = onAuthStateChanged(auth, async (user) => {
+        // #19: Kept in unsubAuth rather than a local, because the sign-in failure
+        // path resolves without ever seeing a user and would leak this listener.
+        unsubAuth = onAuthStateChanged(auth, async (user) => {
           if (user) {
             userId = user.uid;
-            unsub();
+            unsubAuth?.();
+            unsubAuth = null;
             resolve();
           } else {
             try {
@@ -105,6 +108,14 @@ export function createFirebaseStore({ firebaseConfig, appId, initialAuthToken })
     subscribe(cb) {
       listeners.add(cb);
       return () => listeners.delete(cb);
+    },
+    // #19: Detach the Firestore snapshot and any still-pending auth listener.
+    teardown() {
+      unsubSnapshot?.();
+      unsubSnapshot = null;
+      unsubAuth?.();
+      unsubAuth = null;
+      listeners.clear();
     },
     async create(bookmark) {
       const ref = await addDoc(collectionRef(), {

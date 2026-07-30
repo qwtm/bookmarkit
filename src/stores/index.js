@@ -3,6 +3,7 @@
 // - init(): Promise<void> | void
 // - list(): Promise<Bookmark[]>
 // - subscribe(callback: (bookmarks: Bookmark[]) => void): () => void
+// - teardown(): void — release every backend listener init() registered
 // - create(bookmark): Promise<Bookmark>
 // - update(id, patch): Promise<void>
 // - remove(id): Promise<void>
