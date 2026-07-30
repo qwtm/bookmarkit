@@ -18,6 +18,9 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
 - Saved views
   - Name what is on screen — an agent plan, manual filters, or both — and return
     to it from a chip
+- Semantic search
+  - Finds “that article about vector databases” even when none of those words are
+    in the bookmark, and keeps the exact matches at the top
 - Natural language search (AI agent)
   - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”, “clean up my bookmarks”
   - Persist sorted order across all bookmarks (e.g., “reorder descending by title”)
@@ -262,6 +265,25 @@ they are titled: `http` and `https`, `www.` and bare, a trailing slash, and
 tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, and similar) are all
 ignored. Path, remaining query, and fragment still distinguish pages. When
 copies differ, the one carrying tags, a rating, or a description is the one kept.
+
+## Semantic search
+
+Substring matching only finds words that are literally there. With an LLM provider
+that offers embeddings — Gemini, OpenAI, Ollama, or LM Studio; Grok has no
+embeddings endpoint — searching also compares meaning, so “storing vectors” can
+surface a bookmark titled “Pinecone basics”.
+
+Exact matches still come first, in their usual order; semantic hits are added
+after them. Nothing is taken away, so a search never gets worse.
+
+Each bookmark is embedded once and its vector is kept locally, filed under a
+fingerprint of the text it came from — edit a bookmark and only that one is
+re-embedded. After the first search, the only request a search makes is for the
+query itself, which is also why semantic search keeps working when the agent call
+fails: the index is already on your machine.
+
+With no provider, no key, a provider without embeddings, or a locked key, search is
+exactly the substring search it always was.
 
 ## Cleaning up with the agent
 

@@ -3,6 +3,7 @@
 // PERF-08: Defined outside the component so references are stable across renders.
 
 import { findBrokenLinks } from "./linkHealth.js";
+import { mergeSemanticMatches } from "./semanticSearch.js";
 
 export const searchBookmarks = (searchTerm, list) => {
   const lower = (searchTerm || "").toLowerCase();
@@ -157,6 +158,7 @@ export const mergeAgentPlan = (previous = [], steps = []) => {
  */
 export const DISPLAY_ACTIONS = new Set([
   "searchBookmarks",
+  "semanticMatches",
   "findIncludes",
   "findStartsWith",
   "findWithTags",
@@ -181,6 +183,19 @@ export const applyAgentPlan = (plan, list) => {
     switch (action) {
       case "searchBookmarks":
         currentResults = searchBookmarks(parameters.searchTerm || "", currentResults);
+        break;
+      // #46: a search the app widened with vector matches. It carries its own
+      // search term rather than layering onto a `searchBookmarks` step, because
+      // the widening has to see what substring matching filtered out.
+      //
+      // The parser's whitelist does not include it: this step is written by the
+      // app from a local ranking, never by a model.
+      case "semanticMatches":
+        currentResults = mergeSemanticMatches(
+          searchBookmarks(parameters.searchTerm || "", currentResults),
+          currentResults,
+          Array.isArray(parameters.ids) ? parameters.ids : []
+        );
         break;
       case "findIncludes":
         currentResults = findIncludes(

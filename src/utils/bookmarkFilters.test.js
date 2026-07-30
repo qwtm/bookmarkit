@@ -159,3 +159,41 @@ describe("findWithTags", () => {
     expect(findWithTags(["docs"], [], [{ id: "x" }, { id: "y", tags: "docs" }])).toEqual([]);
   });
 });
+
+// #46: the step the app writes when a vector search found things substring
+// matching could not.
+describe("applyAgentPlan with semanticMatches (#46)", () => {
+  const list = [
+    { id: "1", title: "Pinecone basics", url: "https://a.test", tags: [] },
+    { id: "2", title: "Sourdough", url: "https://b.test", tags: [] },
+    { id: "3", title: "Vector databases compared", url: "https://c.test", tags: [] },
+  ];
+
+  it("keeps the substring hits and adds the ranked ones after them", () => {
+    const plan = [
+      { action: "semanticMatches", parameters: { searchTerm: "pinecone", ids: ["3"] } },
+    ];
+
+    expect(applyAgentPlan(plan, list).map((b) => b.id)).toEqual(["1", "3"]);
+  });
+
+  it("is an ordinary search when the ranking is empty", () => {
+    const plan = [{ action: "semanticMatches", parameters: { searchTerm: "pinecone", ids: [] } }];
+
+    expect(applyAgentPlan(plan, list).map((b) => b.id)).toEqual(["1"]);
+  });
+
+  it("still narrows to the ranking when nothing matches literally", () => {
+    const plan = [
+      { action: "semanticMatches", parameters: { searchTerm: "storing vectors", ids: ["3", "1"] } },
+    ];
+
+    expect(applyAgentPlan(plan, list).map((b) => b.id)).toEqual(["3", "1"]);
+  });
+
+  it("survives a step with no ids at all", () => {
+    const plan = [{ action: "semanticMatches", parameters: { searchTerm: "sourdough" } }];
+
+    expect(applyAgentPlan(plan, list).map((b) => b.id)).toEqual(["2"]);
+  });
+});
