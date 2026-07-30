@@ -156,6 +156,19 @@ describe("parseNetscapeHtml on what browsers actually write", () => {
     expect(parsed[0]).toMatchObject({ folderId: "Work notes", title: "A bold title" });
   });
 
+  // Text is collected as it is scanned, never recovered by removing tags from a
+  // captured blob: one pass of that leaves "<scr<script>ipt>" as "<script>". No
+  // arrangement of brackets can leave a "<" in a title, so nothing read out of a
+  // file can later be read back as an element.
+  it("leaves no tag opener in a title, however the brackets are arranged", () => {
+    const [parsed] = parseNetscapeHtml(
+      '<DT><A HREF="https://a.test/">A<b<b>>title<scr<script>ipt>end</A>'
+    );
+
+    expect(parsed.title).not.toContain("<");
+    expect(parsed.title).toBe("A>titleipt>end");
+  });
+
   it("keeps sibling folders apart", () => {
     const parsed = parseNetscapeHtml(
       "<DL><p>" +

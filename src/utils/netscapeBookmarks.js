@@ -112,10 +112,13 @@ export function generateNetscapeHtml(bookmarks) {
 // bookmark file is a generated, shallow structure that does not need a full HTML
 // parser, and staying DOM-free buys two things: the module works in the MV3
 // service worker, which has no DOMParser, and untrusted file text never reaches
-// an HTML parser at all. Attribute values in a bookmark file are escaped, so an
-// attribute list ends at the first ">".
-const TOKEN =
-  /(?<open><dl\b[^>]*>)|(?<close><\/dl\s*>)|<h3\b[^>]*>(?<folder>[\s\S]*?)<\/h3\s*>|<a\b(?<attributes>[^>]*)>(?<title>[\s\S]*?)<\/a\s*>/giu;
+// an HTML parser at all.
+//
+// Every token is either a tag or a run of text, and text is collected as it is
+// found rather than recovered by removing tags from a captured blob — stripping
+// markup after the fact is never complete, since "<b<b>>" survives one pass.
+// Attribute values in a bookmark file are escaped, so a tag ends at the first ">".
+const TOKEN = /<(?<closing>\/?)(?<name>[a-z][\w:-]*)(?<attributes>[^>]*)>|(?<text>[^<]+)/giu;
 
 const ATTRIBUTE = /([a-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/giu;
 
@@ -134,12 +137,11 @@ function decodeEntities(value) {
   });
 }
 
-// A label or a link's text can carry markup — browsers wrap parts in <B> — and
-// only the text is a title.
-function plainText(value) {
-  return decodeEntities(String(value ?? "").replace(/<[^>]*>/gu, ""))
-    .replace(/\s+/gu, " ")
-    .trim();
+// The text runs collected between an element's tags, as one title. A label or a
+// link's text can carry markup — browsers wrap parts in <B> — and only the text
+// of it is a title.
+function joinText(runs) {
+  return decodeEntities(runs.join("")).replace(/\s+/gu, " ").trim();
 }
 
 function attributesOf(tag) {
@@ -157,13 +159,13 @@ function fromUnixSeconds(value, fallback) {
   return Number.isNaN(ms) || Math.abs(ms) > 8.64e15 ? fallback : new Date(ms).toISOString();
 }
 
-function readAnchor(tag, text, folderPath, now) {
+function readAnchor({ attributes: tag, text }, folderPath, now) {
   const attributes = attributesOf(tag);
   const url = attributes.get("href") || "";
   if (!url) return null;
   const rating = parseInt(attributes.get("rating"), 10);
   return {
-    title: text || url,
+    title: joinText(text) || url,
     url,
     description: attributes.get("description") || "",
     tags: parseTags(attributes.get("tags")),
@@ -188,19 +190,34 @@ export function parseNetscapeHtml(html) {
   // list has no label, so it contributes an empty segment.
   const folderPath = [];
   let pendingLabel = "";
+  // The <A> or <H3> being read, if any. Tags inside it are passed over and their
+  // text still counts, which is how <B> in a title contributes its words.
+  let open = null;
 
   for (const { groups } of String(html ?? "").matchAll(TOKEN)) {
-    if (groups.folder !== undefined) {
-      pendingLabel = plainText(groups.folder);
-    } else if (groups.open) {
+    if (groups.text !== undefined) {
+      open?.text.push(groups.text);
+      continue;
+    }
+    const name = groups.name.toLowerCase();
+    const closing = Boolean(groups.closing);
+
+    if (name === "dl" && !closing) {
       folderPath.push(pendingLabel);
       pendingLabel = "";
-    } else if (groups.close) {
+    } else if (name === "dl") {
       folderPath.pop();
-    } else {
-      pendingLabel = "";
-      const bookmark = readAnchor(groups.attributes, plainText(groups.title), folderPath, now);
-      if (bookmark) bookmarks.push(bookmark);
+    } else if (name === "h3" || name === "a") {
+      if (closing && open?.name === name) {
+        if (name === "h3") pendingLabel = joinText(open.text);
+        else {
+          const bookmark = readAnchor(open, folderPath, now);
+          if (bookmark) bookmarks.push(bookmark);
+        }
+      }
+      // An unclosed element is abandoned when the next one opens.
+      open = closing ? null : { name, attributes: groups.attributes, text: [] };
+      if (name === "a" && !closing) pendingLabel = "";
     }
   }
 
