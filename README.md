@@ -107,10 +107,26 @@ The extension ships two surfaces from one build:
 | Toolbar popup | `popup.html` | Quick-add for the current tab: prefilled title/URL, tags, rating, folder. Detects an already-saved URL and edits it instead of duplicating. |
 | Full app      | `index.html` | The complete manager (search, agent, import/export, options). Opened from the popup's "Open full app".                                      |
 
+### Getting there without opening it
+
+- **Address bar.** Type `bm` then a space, then anything: every word has to appear in a saved
+  bookmark's title or address, so typing more narrows the list. Enter opens the highlighted match, or
+  the best match if you never picked one. Matching happens locally against what you have saved — no
+  network call and no model, because an address bar that waits feels broken. Tags and ratings live in
+  Bookmarkit's own metadata rather than Chrome's tree, so they are not searched here; use the full
+  app's search for those.
+- **Right-click.** "Bookmark with bookmarkit" on a page saves the page. On a link it saves the
+  **link**, with the link text as the title — quick-add opens in its own small window because a link
+  is not the tab you are on.
+- **Keyboard.** `Alt+Shift+B` opens quick-add for the current page. Chrome reserves `Ctrl+Shift+B` /
+  `⌘+Shift+B` for its own bookmarks bar and silently drops an extension that asks for them, which is
+  why the default is `Alt`. Rebind it at `chrome://extensions/shortcuts`.
+
 Permissions requested (`public/manifest.json`):
 
 - `bookmarks` — the default store keeps title/URL in the real Chrome bookmark tree.
 - `storage` — settings, themes, and the per-bookmark metadata layer.
+- `contextMenus` — the right-click entry point above.
 - `<all_urls>` — lets the background service worker run URL reachability checks from a privileged
   context (bypassing page CORS), and lets the popup read the active tab's title/URL. Requests are
   restricted to public http(s) hosts; private, loopback, and link-local addresses are blocked, and
