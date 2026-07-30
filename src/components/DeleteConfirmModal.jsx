@@ -1,25 +1,13 @@
-import React, { useEffect, useRef } from "react";
-import { useFocusTrap } from "../hooks/useFocusTrap.js";
+import React from "react";
 import { Button, Modal } from "./DesignSystem.jsx";
 
-// A11Y-02, A11Y-04, PERF-05: Accessible delete confirmation modal with focus trap,
-// alertdialog role, Escape key handler, focus restoration, and React.memo.
+// A11Y-04, PERF-05: alertdialog role and React.memo. Focus trap, Escape, and
+// focus restoration come from Modal (#27); onScrimClick guards both routes out
+// so a deletion in flight cannot be abandoned half way.
 // UX-09: isLoading prop disables buttons and shows spinner during async deletion.
 const DeleteConfirmModal = ({ message, onConfirm, onCancel, isLoading = false }) => {
-  const containerRef = useRef(null);
-  useFocusTrap(containerRef);
-
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === "Escape") onCancel();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onCancel]);
-
   return (
     <Modal
-      ref={containerRef}
       role="alertdialog"
       title="Confirm Deletion"
       titleId="delete-confirm-title"
