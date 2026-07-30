@@ -45,24 +45,29 @@ export const findDuplicateIds = (list = []) => {
 };
 
 /**
- * Filters import candidates using the same duplicate rule as findDuplicateIds.
- * Existing bookmarks seed the seen set; duplicates inside the import batch are
- * also skipped so only the first occurrence is imported.
+ * Filters import candidates using the same duplicate rule as findDuplicateIds:
+ * a page already bookmarked is skipped, and among copies of one page inside the
+ * batch the richest is imported. An export commonly lists a page twice, once
+ * bare and once annotated, so picking the first occurrence would drop the tags.
+ * Surviving copies keep the order they first appeared in.
  * @param {Array} incoming
  * @param {Array} existing
  * @returns {{ bookmarks: Array, skippedCount: number }}
  */
 export const filterDuplicateImports = (incoming = [], existing = []) => {
-  const seen = new Set(existing.map(getDuplicateKey));
-  const bookmarks = [];
+  const alreadyHave = new Set(existing.map(getDuplicateKey));
+  const chosen = new Map();
 
   for (const bookmark of incoming) {
     const key = getDuplicateKey(bookmark);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    bookmarks.push(bookmark);
+    if (alreadyHave.has(key)) continue;
+    const kept = chosen.get(key);
+    // Map.set keeps the original position for a key already present, so
+    // replacing a copy does not move the import to the end of the batch.
+    if (!kept || metadataWeight(bookmark) > metadataWeight(kept)) chosen.set(key, bookmark);
   }
 
+  const bookmarks = [...chosen.values()];
   return {
     bookmarks,
     skippedCount: incoming.length - bookmarks.length,

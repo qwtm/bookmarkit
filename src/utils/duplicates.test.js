@@ -93,6 +93,26 @@ describe("filterDuplicateImports", () => {
     expect(skippedCount).toBe(1);
   });
 
+  it("imports the annotated copy when the batch has it twice (#45)", () => {
+    const incoming = [
+      { title: "Docs", url: "https://example.com/docs" },
+      { title: "Docs", url: "https://example.com/docs", tags: ["react"], rating: 5 },
+    ];
+    const { bookmarks, skippedCount } = filterDuplicateImports(incoming, []);
+    expect(skippedCount).toBe(1);
+    expect(bookmarks).toEqual([incoming[1]]);
+  });
+
+  it("keeps the surviving copy where it first appeared (#45)", () => {
+    const incoming = [
+      { title: "First", url: "https://example.com/a" },
+      { title: "Other", url: "https://example.com/b" },
+      { title: "First, annotated", url: "https://example.com/a", tags: ["x"] },
+    ];
+    const { bookmarks } = filterDuplicateImports(incoming, []);
+    expect(bookmarks.map((b) => b.title)).toEqual(["First, annotated", "Other"]);
+  });
+
   it("defaults to empty inputs", () => {
     expect(filterDuplicateImports()).toEqual({ bookmarks: [], skippedCount: 0 });
   });
