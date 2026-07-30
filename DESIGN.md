@@ -26,10 +26,31 @@ edition.
 
 ## Application and state flow
 
-`src/components/BookmarkApp.jsx` owns the full-app orchestration: the active
-store, LLM plan, manual filters, keyboard behavior, themes, selection, and
-modal visibility. `src/popup/QuickAdd.jsx` is a separate small surface, but it
-uses the same store hook and theme hook so bookmark writes do not fork.
+`src/components/BookmarkApp.jsx` orchestrates the full app: it decides what is
+shown and which dialog is open, and wires the pieces together. It does not
+implement them. Each concern with its own rules lives in a hook that can be read
+and tested without a UI:
+
+| Hook                      | Owns                                                                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `useBookmarkStore`        | The active store, the bookmark list, and every write path.                                                        |
+| `useLLMSettings`          | Which provider is in use, its options, and the passphrase lock protecting the API key at rest.                    |
+| `useAgentEngine`          | One agent request: rate limiting, cancellation, discarding superseded replies, parsing, and error classification. |
+| `useBookmarkSelection`    | Which bookmarks are selected, and the pointer and key gestures that change that.                                  |
+| `useKeyboardShortcuts`    | App-level shortcuts, suspended while a dialog is open.                                                            |
+| `useUndoToast`            | The one-level undo offer and its timer.                                                                           |
+| `useTheme`, `useDebounce` | Theme selection; debounced values.                                                                                |
+
+The dividing line is worth stating, because it is what keeps the orchestration
+from creeping back: a hook owns a rule, the component owns the consequences.
+`useAgentEngine` produces a plan and hands the steps back; opening a dialog or
+persisting an order in response is the component's business. `useBookmarkSelection`
+decides what is selected; deleting the selection is not its concern. The agent
+plan itself is component state, since the view, the manual filters, and a
+persisted reorder all read it.
+
+`src/popup/QuickAdd.jsx` is a separate small surface, but it uses the same store
+hook and theme hook so bookmark writes do not fork.
 
 The visible list is a projection, never a second source of truth:
 
