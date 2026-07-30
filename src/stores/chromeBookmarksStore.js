@@ -127,6 +127,45 @@ export function createChromeBookmarksStore() {
     return results;
   };
 
+  // #42: the folder path a bookmark asks for, in the same shape `create` uses.
+  const folderPathOf = (bookmark) =>
+    typeof bookmark.folderId === "string" ? bookmark.folderId.trim() : "";
+
+  /**
+   * #42: Create many bookmarks in the folders their folderId names, rather than
+   * flattening them under the root — an HTML import derives folders from its
+   * <H3> tags and the Chrome tree is what other devices see.
+   *
+   * Each distinct path is resolved once, sequentially, so two bookmarks under
+   * "Work/A" and "Work/B" share one "Work" folder instead of racing to create
+   * two. Creation itself stays parallel (PERF-02).
+   *
+   * Returns successes and failures instead of throwing, so a caller that has
+   * something to lose can decide what a partial result means.
+   */
+  const createInFolders = async (bookmarks) => {
+    const folderIds = new Map();
+    for (const path of new Set(bookmarks.map(folderPathOf))) {
+      folderIds.set(path, await ensureFolderPath(path));
+    }
+    const settled = await Promise.allSettled(
+      bookmarks.map((b) =>
+        chrome.bookmarks.create({
+          parentId: folderIds.get(folderPathOf(b)),
+          title: b.title || b.url,
+          url: b.url,
+        })
+      )
+    );
+    return {
+      created: settled.filter((r) => r.status === "fulfilled").map((r) => r.value),
+      failures: settled.filter((r) => r.status === "rejected").map((r) => r.reason),
+    };
+  };
+
+  const removeQuietly = (ids) =>
+    Promise.all(ids.map((id) => chrome.bookmarks.remove(id).catch(() => {})));
+
   const subscribeChromeEvents = () => {
     const onChange = () => {
       if (mutationDepth > 0) return;
@@ -268,36 +307,35 @@ export function createChromeBookmarksStore() {
     },
     async removeMany(ids = []) {
       // Delete in parallel; ignore per-item failures, then notify once
-      await mutate(() =>
-        Promise.all((ids || []).map((id) => chrome.bookmarks.remove(id).catch(() => {})))
-      );
+      await mutate(() => removeQuietly(ids || []));
     },
+    /**
+     * #17: Replace the whole collection without a window in which it is gone.
+     * The replacements are written first; the originals are removed only once
+     * every one of them exists. A partial failure rolls the new copies back and
+     * reports the error, leaving the collection as it was.
+     */
     async bulkReplace(bookmarks) {
       return mutate(async () => {
-        const rootId = await ensureRootFolder();
-        const children = await chrome.bookmarks.getChildren(rootId);
-        // PERF-02: Parallelize bookmark removal, then parallel creation
-        await Promise.all(
-          children.filter((c) => c.url).map((c) => chrome.bookmarks.remove(c.id).catch(() => {}))
-        );
-        return Promise.all(
-          bookmarks.map((b) =>
-            chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
-          )
-        );
+        const previous = await listUnderRoot();
+        const { created, failures } = await createInFolders(bookmarks);
+        if (failures.length > 0) {
+          await removeQuietly(created.map((n) => n.id));
+          throw new Error(
+            `Could not write ${failures.length} of ${bookmarks.length} bookmarks, so nothing was replaced: ${failures[0]?.message || failures[0]}`
+          );
+        }
+        await removeQuietly(previous.map((b) => b.id));
+        return created;
       });
     },
     async bulkAdd(bookmarks) {
-      const createdNodes = await mutate(async () => {
-        const rootId = await ensureRootFolder();
-        // PERF-02: Create all bookmarks in parallel instead of sequentially
-        return Promise.all(
-          bookmarks.map((b) =>
-            chrome.bookmarks.create({ parentId: rootId, title: b.title || b.url, url: b.url })
-          )
-        );
-      });
-      return createdNodes.map((n) => toBookmark(n));
+      const { created, failures } = await mutate(() => createInFolders(bookmarks));
+      // Adding is additive, so the bookmarks that did land are kept, but the
+      // caller still hears that the rest did not.
+      if (failures.length > 0) throw failures[0];
+      // No failures, so created[i] is the node for bookmarks[i].
+      return created.map((n, i) => toBookmark(n, folderPathOf(bookmarks[i])));
     },
   };
 
