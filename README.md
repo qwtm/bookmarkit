@@ -35,6 +35,8 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
 - URL status
   - Lightweight validity check via HEAD request from the extension service worker
   - One‑click “Ignore checking” toggle per bookmark
+  - Sweep the whole collection for dead links, resumable, and filter to what it
+    found
 - LLM integration (runtime‑configurable)
   - Gemini, OpenAI (ChatGPT), Grok (x.ai), Ollama (local), LM Studio (local)
   - Model discovery (where supported), custom base URLs, stored per provider
@@ -317,6 +319,27 @@ rest, whether or not their toasts are still showing.
   ratings, folders, and notes, not just their titles and URLs.
 - Undo history lives in the page. Closing or reloading the app clears it, and it
   is not offered in the quick‑add popup, which closes as soon as it saves.
+
+## Checking for dead links
+
+Bookmarks rot. **Check Links** in the header sweeps the collection and marks
+whatever it cannot reach, and the filter bar's **Broken only** toggle (or asking
+the agent for your broken links) shows the results.
+
+- The sweep is something you start, not something that happens quietly: checking
+  every bookmark contacts every host you have saved.
+- It goes a few links at a time with pauses between them, so a large collection
+  does not look like a scanner, and it backs off when nothing can be reached —
+  usually a sign your connection dropped rather than that the web did.
+- It remembers what it checked. Stopping it, closing the app, or coming back next
+  week resumes where it left off instead of starting over; a link checked in the
+  last week is left alone.
+- Only public http(s) addresses are checked, and a bookmark you marked “Ignore
+  checking” is skipped entirely.
+- A broken link is never re-pointed automatically. Redirect targets come from the
+  remote server, and following one from a privileged fetch is exactly the hole
+  the URL checks are guarded against, so what to do about a dead link is left to
+  you: fix it in the form, or select the broken ones and delete them together.
 
 ## URL validation
 

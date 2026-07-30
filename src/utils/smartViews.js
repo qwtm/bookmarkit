@@ -41,6 +41,7 @@ function sanitizeFilters(raw) {
     includeTags: asTagList(raw.includeTags),
     excludeTags: asTagList(raw.excludeTags),
     minRating: asRating(raw.minRating),
+    brokenOnly: raw.brokenOnly === true,
     sortBy: isSortableField(raw.sortBy) ? raw.sortBy : "",
     order: raw.order === "desc" ? "desc" : "asc",
   };

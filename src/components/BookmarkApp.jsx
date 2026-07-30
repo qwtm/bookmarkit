@@ -9,6 +9,8 @@ import {
   hasActiveFilters,
 } from "../utils/manualFilters.js";
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
+import { isBroken } from "../utils/linkHealth.js";
+import { fetchUrlStatus } from "../utils/urlStatus.js";
 import { isViewWorthSaving, matchingViewId } from "../utils/smartViews.js";
 import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
@@ -17,6 +19,7 @@ import { useAgentEngine } from "../hooks/useAgentEngine.js";
 import { useBookmarkSelection } from "../hooks/useBookmarkSelection.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
+import { useLinkSweep } from "../hooks/useLinkSweep.js";
 import { useLLMSettings } from "../hooks/useLLMSettings.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useDebounce } from "../hooks/useDebounce.js";
@@ -32,6 +35,7 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import OptionsModal from "./OptionsModal";
 import BookmarkList from "./BookmarkList.jsx";
 import BulkEditBar from "./BulkEditBar.jsx";
+import LinkSweepBar from "./LinkSweepBar.jsx";
 import SmartViewBar from "./SmartViewBar.jsx";
 import { AgentPlan, Button, IconButton, Kbd, Modal, SearchBar, Toast } from "./DesignSystem.jsx";
 
@@ -155,27 +159,6 @@ const BookmarkApp = () => {
     [manualFilters, debouncedFilterText]
   );
 
-  // ─── URL validation ──────────────────────────────────────────────────────────
-  // Route through the background service worker so the fetch runs in a privileged
-  // context that bypasses CORS. Falls back to direct fetch in web-app mode.
-  const fetchUrlStatus = useCallback((url) => {
-    if (!url) return Promise.resolve({ status: "idle" });
-    if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: "CHECK_URL", url }, (result) => {
-          resolve(result ?? { status: "invalid", redirectUrl: null });
-        });
-      });
-    }
-    // Web-app fallback
-    return fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) })
-      .then((res) => ({
-        status: res.ok ? "valid" : "invalid",
-        redirectUrl: res.url && res.url !== url ? res.url : null,
-      }))
-      .catch(() => ({ status: "invalid", redirectUrl: null }));
-  }, []);
-
   // ─── Background URL validation on select ────────────────────────────────────
   // When a bookmark is selected, silently validate its URL and auto-save if the
   // status or URL has changed (e.g. 404 discovered, or a redirect destination).
@@ -199,7 +182,18 @@ const BookmarkApp = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedBookmarkId, fetchUrlStatus]); // bookmarksRef + storeRef are refs, no dep needed
+  }, [selectedBookmarkId, storeRef]); // bookmarksRef is a ref, no dep needed
+
+  // ─── Dead-link sweep (#47) ──────────────────────────────────────────────────
+  // Asked for rather than automatic: checking every link contacts every host in
+  // the collection. It resumes where it left off, so a large collection can be
+  // swept over several runs.
+  const sweep = useLinkSweep({ bookmarks, storeRef, showMessage: showCustomMessage });
+  const brokenCount = useMemo(() => bookmarks.filter(isBroken).length, [bookmarks]);
+  const showBrokenOnly = useCallback(
+    () => setManualFilters((prev) => ({ ...prev, brokenOnly: true })),
+    []
+  );
 
   // ─── Displayed bookmarks (PERF-08: precise deps, ARCH-10: empty state handled in BookmarkList) ─
   // #53: the agent plan narrows first, then the manual filters layer on top. Tag facets
@@ -690,6 +684,13 @@ const BookmarkApp = () => {
               <Button size="sm" intent="secondary" onClick={handleRemoveDuplicates}>
                 Remove Duplicates
               </Button>
+              <Button
+                size="sm"
+                intent="secondary"
+                onClick={sweep.running ? sweep.stop : sweep.start}
+              >
+                {sweep.running ? "Stop Check" : "Check Links"}
+              </Button>
               {lastAction && (
                 <Button size="sm" intent="ghost" onClick={resetSearch}>
                   Clear Search
@@ -726,6 +727,16 @@ const BookmarkApp = () => {
             onApply={applyView}
             onSave={handleSaveView}
             onForget={forgetView}
+          />
+
+          <LinkSweepBar
+            running={sweep.running}
+            checked={sweep.checked}
+            total={sweep.total}
+            brokenCount={brokenCount}
+            brokenOnly={manualFilters.brokenOnly}
+            onStop={sweep.stop}
+            onShowBroken={showBrokenOnly}
           />
 
           {/* #54: Only for a real multi-selection — a single click is served by the form. */}

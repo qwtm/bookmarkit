@@ -2,6 +2,8 @@
 // No React or DOM dependencies — independently testable.
 // PERF-08: Defined outside the component so references are stable across renders.
 
+import { findBrokenLinks } from "./linkHealth.js";
+
 export const searchBookmarks = (searchTerm, list) => {
   const lower = (searchTerm || "").toLowerCase();
   if (!lower) return list;
@@ -159,6 +161,7 @@ export const DISPLAY_ACTIONS = new Set([
   "findStartsWith",
   "findWithTags",
   "filterByRating",
+  "findBrokenLinks",
   "sortBookmarks",
   "limitResults",
   "limitFirst",
@@ -199,6 +202,9 @@ export const applyAgentPlan = (plan, list) => {
           parameters.excludeTags || [],
           currentResults
         );
+        break;
+      case "findBrokenLinks":
+        currentResults = findBrokenLinks(currentResults);
         break;
       case "filterByRating":
         currentResults = filterByRating(parameters || {}, currentResults);
