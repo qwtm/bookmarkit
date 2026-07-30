@@ -18,6 +18,9 @@ const initialAuthToken =
 export function useBookmarkStore() {
   const [bookmarks, setBookmarks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // #18: Set when the collection could not be opened at all. Distinct from
+  // "loaded and empty", which is a legitimate state a user can write into.
+  const [loadError, setLoadError] = useState(null);
   const [importProgress, setImportProgress] = useState(null); // UX-06
   const storeRef = useRef(null);
 
@@ -52,14 +55,22 @@ export function useBookmarkStore() {
         });
         await s.init();
         // #19: An unmount during init still has to release the store's backend
-        // listeners, which init() has already registered by this point.
+        // listeners, which init() has already registered by this point. Until the
+        // read below publishes it, this is the only reference to it — the cleanup
+        // function has nothing to reach.
         if (cancelled) {
           s.teardown?.();
           return;
         }
-        storeRef.current = s;
         const data = await s.list();
-        if (cancelled) return;
+        if (cancelled) {
+          s.teardown?.();
+          return;
+        }
+        // #18: The store becomes writable only once it has been read. Publishing
+        // it before the first read meant a rejected read left the app on an
+        // empty list that every write path was happy to add to.
+        storeRef.current = s;
         setBookmarks(data);
         setIsLoading(false);
         unsub = s.subscribe((all) => {
@@ -69,6 +80,7 @@ export function useBookmarkStore() {
         if (cancelled) return;
         // #18: Without this the failure was an unhandled rejection and isLoading
         // stayed true, leaving the app on a spinner with nothing to explain it.
+        setLoadError(error?.message || String(error));
         setIsLoading(false);
         showMessage?.(`Could not open your bookmarks. ${error?.message || error}`, "error");
       });
@@ -151,6 +163,7 @@ export function useBookmarkStore() {
   return {
     bookmarks,
     isLoading,
+    loadError,
     importProgress,
     storeRef,
     init,

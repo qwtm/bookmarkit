@@ -56,6 +56,7 @@ const BookmarkApp = () => {
   const {
     bookmarks,
     isLoading,
+    loadError,
     importProgress,
     storeRef,
     init,
@@ -938,6 +939,28 @@ const BookmarkApp = () => {
             style={{ borderColor: "var(--accent)" }}
           />
           <p style={{ color: "var(--text-secondary)" }}>Loading bookmarks...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // #18: A collection that could not be opened is not an empty collection. The
+  // app is withheld rather than shown empty, because every empty-state route out
+  // of it — Add, Import — would write against bookmarks we never managed to read.
+  if (loadError) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center p-6"
+        style={{ backgroundColor: "var(--bg-secondary)" }}
+      >
+        <div className="text-center max-w-md">
+          <h1 className="text-lg font-semibold mb-2" style={{ color: "var(--text-primary)" }}>
+            Your bookmarks could not be opened
+          </h1>
+          <p className="text-sm mb-4" style={{ color: "var(--text-secondary)" }}>
+            Nothing has been changed. {loadError}
+          </p>
+          <Button onClick={() => window.location.reload()}>Try again</Button>
         </div>
       </div>
     );
