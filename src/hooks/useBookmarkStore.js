@@ -27,7 +27,7 @@ export function useBookmarkStore() {
      * @param {(msg: string, type?: string) => void} showMessage
      * @returns {() => void} cleanup
      */
-    (_showMessage) => {
+    (showMessage) => {
       let cancelled = false;
       let unsub;
       (async () => {
@@ -35,7 +35,21 @@ export function useBookmarkStore() {
           typeof __use_firebase__ !== "undefined" && __use_firebase__
             ? STORE_TYPES.FIREBASE
             : STORE_TYPES.LOCAL;
-        const s = await getStore(preferred, { firebaseConfig, appId, initialAuthToken });
+        const s = await getStore(preferred, {
+          firebaseConfig,
+          appId,
+          initialAuthToken,
+          // #18: A store that loses its subscription keeps the last list it
+          // emitted rather than emptying it, so the staleness has to be said out
+          // loud — otherwise the next save is made against a view we know is old.
+          onError: (error) => {
+            if (cancelled) return;
+            showMessage?.(
+              `Could not refresh bookmarks, so this is the last loaded copy. ${error?.message || ""}`.trim(),
+              "error"
+            );
+          },
+        });
         await s.init();
         // #19: An unmount during init still has to release the store's backend
         // listeners, which init() has already registered by this point.
@@ -51,7 +65,13 @@ export function useBookmarkStore() {
         unsub = s.subscribe((all) => {
           if (!cancelled) setBookmarks(all);
         });
-      })();
+      })().catch((error) => {
+        if (cancelled) return;
+        // #18: Without this the failure was an unhandled rejection and isLoading
+        // stayed true, leaving the app on a spinner with nothing to explain it.
+        setIsLoading(false);
+        showMessage?.(`Could not open your bookmarks. ${error?.message || error}`, "error");
+      });
       return () => {
         cancelled = true;
         unsub?.();

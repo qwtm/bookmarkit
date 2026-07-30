@@ -68,6 +68,13 @@ walks. `chromeBookmarksStore` ignores the events its own writes echo back and
 coalesces bursts it did not cause. Anything added to a store must keep that
 property: one write, one notification, whatever its size.
 
+An empty list means the user has no bookmarks. A store must never emit one to
+mean "I could not read them": the app cannot tell the difference, and a save made
+from that view is made against nothing. A store that fails before it is usable
+rejects `init()`; one that fails afterwards keeps the last list it emitted and
+reports through the optional `onError` option, which `useBookmarkStore` turns
+into a message. Either way the failure is visible.
+
 ## LLM boundary
 
 Provider adapters in `src/llm/providers/` expose `generate(prompt)` through the
