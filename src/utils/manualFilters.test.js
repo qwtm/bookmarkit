@@ -203,3 +203,75 @@ describe("chip counts agree with chip filtering (regression, #58)", () => {
     expect(shown.map((b) => b.id)).toEqual(["3"]);
   });
 });
+
+describe("brokenOnly (#47)", () => {
+  const withStatus = [
+    { id: "1", title: "Alive", url: "http://a.com", urlStatus: "valid" },
+    { id: "2", title: "Dead", url: "http://b.com", urlStatus: "invalid" },
+    { id: "3", title: "Left alone", url: "http://c.com", urlStatus: "ignored" },
+  ];
+
+  it("keeps only the links the last check could not reach", () => {
+    const filtered = applyManualFilters({ ...EMPTY_FILTERS, brokenOnly: true }, withStatus);
+
+    expect(filtered.map((b) => b.id)).toEqual(["2"]);
+  });
+
+  it("changes nothing while it is off", () => {
+    expect(applyManualFilters(EMPTY_FILTERS, withStatus)).toHaveLength(3);
+  });
+
+  it("counts as an active filter, so Clear filters reaches it", () => {
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, brokenOnly: true })).toBe(true);
+  });
+});
+
+describe("neverOpened (#50)", () => {
+  const withHistory = [
+    { id: "1", title: "Read", url: "http://a.com", lastOpenedAt: "2026-07-01T00:00:00.000Z" },
+    { id: "2", title: "Untouched", url: "http://b.com", createdAt: "2026-01-01T00:00:00.000Z" },
+    { id: "3", title: "Older, untouched", url: "http://c.com", createdAt: "2025-01-01T00:00:00Z" },
+  ];
+
+  it("keeps only what nothing has opened, oldest first", () => {
+    const filtered = applyManualFilters({ ...EMPTY_FILTERS, neverOpened: true }, withHistory);
+
+    expect(filtered.map((b) => b.id)).toEqual(["3", "2"]);
+  });
+
+  it("changes nothing while it is off", () => {
+    expect(applyManualFilters(EMPTY_FILTERS, withHistory)).toHaveLength(3);
+  });
+
+  it("counts as an active filter, so Clear filters reaches it", () => {
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, neverOpened: true })).toBe(true);
+  });
+});
+
+// #55: clicking a folder in the tree is a manual filter, so it combines with the
+// others and a saved view can hold it.
+describe("filtering by folder (#55)", () => {
+  const filed = [
+    { id: "1", title: "One", url: "https://one.test", tags: [], folderId: "Work" },
+    { id: "2", title: "Two", url: "https://two.test", tags: [], folderId: "Work/Project A" },
+    { id: "3", title: "Three", url: "https://three.test", tags: [], folderId: "Personal" },
+    { id: "4", title: "Four", url: "https://four.test", tags: [] },
+  ];
+
+  it("narrows to a folder and everything under it", () => {
+    const result = applyManualFilters({ ...EMPTY_FILTERS, folder: "Work" }, filed);
+
+    expect(result.map((b) => b.id)).toEqual(["1", "2"]);
+  });
+
+  it("is not an active filter until a folder is chosen", () => {
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, folder: "" })).toBe(false);
+    expect(hasActiveFilters({ ...EMPTY_FILTERS, folder: "Work" })).toBe(true);
+  });
+
+  it("layers on the other filters rather than replacing them", () => {
+    const result = applyManualFilters({ ...EMPTY_FILTERS, folder: "Work", text: "two" }, filed);
+
+    expect(result.map((b) => b.id)).toEqual(["2"]);
+  });
+});

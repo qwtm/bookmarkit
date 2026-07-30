@@ -65,11 +65,42 @@ function mergeNodeWithMeta(node, meta) {
     rating: m.rating ?? node.rating ?? 0,
     faviconUrl: m.faviconUrl ?? node.faviconUrl ?? "",
     urlStatus: m.urlStatus ?? node.urlStatus ?? "valid",
+    // #50: written by opening a bookmark, not by editing one. Absent means never.
+    lastOpenedAt: m.lastOpenedAt ?? node.lastOpenedAt ?? "",
     createdAt: m.createdAt ?? node.createdAt ?? "",
     updatedAt: m.updatedAt ?? node.updatedAt ?? "",
     // Prefer stored folderId label when present, else underlying node folder
     folderId: m.folderId ?? node.folderId ?? "",
   };
+}
+
+/**
+ * Write one patch to both halves of the composite: the fields Chrome owns go to
+ * the bookmarks API, everything else to metadata. Notifying is left to the
+ * caller, so a batch can do it once.
+ */
+async function writePatch(chromeStore, id, patch) {
+  const chromePatch = {};
+  if (typeof patch.title === "string") chromePatch.title = patch.title;
+  if (typeof patch.url === "string") chromePatch.url = patch.url;
+  if (Object.prototype.hasOwnProperty.call(patch, "folderId"))
+    chromePatch.folderId = patch.folderId;
+  if (Object.keys(chromePatch).length > 0) {
+    await chromeStore.update(id, chromePatch);
+  }
+  const meta = readMeta(id);
+  writeMeta(id, {
+    ...meta,
+    description: patch.description ?? meta.description ?? "",
+    tags: patch.tags ?? meta.tags ?? [],
+    rating: patch.rating ?? meta.rating ?? 0,
+    faviconUrl: patch.faviconUrl ?? meta.faviconUrl ?? "",
+    urlStatus: patch.urlStatus ?? meta.urlStatus ?? "valid",
+    lastOpenedAt: patch.lastOpenedAt ?? meta.lastOpenedAt ?? "",
+    folderId: patch.folderId ?? meta.folderId ?? "",
+    createdAt: meta.createdAt ?? "",
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export function createLocalCompositeStore(options = {}) {
@@ -181,6 +212,7 @@ export function createLocalCompositeStore(options = {}) {
         rating: bookmark.rating || 0,
         faviconUrl: bookmark.faviconUrl || node.faviconUrl || "",
         urlStatus: bookmark.urlStatus || "valid",
+        lastOpenedAt: bookmark.lastOpenedAt || "",
         folderId: bookmark.folderId || "",
         createdAt: bookmark.createdAt || now,
         updatedAt: bookmark.updatedAt || now,
@@ -189,29 +221,14 @@ export function createLocalCompositeStore(options = {}) {
       return mergeNodeWithMeta(node);
     },
     async update(id, patch) {
-      // Split supported chrome fields vs metadata
-      const chromePatch = {};
-      if (typeof patch.title === "string") chromePatch.title = patch.title;
-      if (typeof patch.url === "string") chromePatch.url = patch.url;
-      if (Object.prototype.hasOwnProperty.call(patch, "folderId"))
-        chromePatch.folderId = patch.folderId;
-      if (Object.keys(chromePatch).length > 0) {
-        await chromeStore.update(id, chromePatch);
+      await writePatch(chromeStore, id, patch);
+      await notify();
+    },
+    // #54: The same write per bookmark, then one notification for the batch.
+    async updateMany(patches = []) {
+      for (const { id, ...patch } of patches || []) {
+        await writePatch(chromeStore, id, patch);
       }
-      // Merge and write metadata
-      const meta = readMeta(id);
-      const merged = {
-        ...meta,
-        description: patch.description ?? meta.description ?? "",
-        tags: patch.tags ?? meta.tags ?? [],
-        rating: patch.rating ?? meta.rating ?? 0,
-        faviconUrl: patch.faviconUrl ?? meta.faviconUrl ?? "",
-        urlStatus: patch.urlStatus ?? meta.urlStatus ?? "valid",
-        folderId: patch.folderId ?? meta.folderId ?? "",
-        createdAt: meta.createdAt ?? "",
-        updatedAt: new Date().toISOString(),
-      };
-      writeMeta(id, merged);
       await notify();
     },
     async remove(id) {
@@ -249,6 +266,7 @@ export function createLocalCompositeStore(options = {}) {
           rating: b.rating || 0,
           faviconUrl: b.faviconUrl || node.faviconUrl || "",
           urlStatus: b.urlStatus || "valid",
+          lastOpenedAt: b.lastOpenedAt || "",
           folderId: b.folderId || "",
           createdAt: b.createdAt || now,
           updatedAt: b.updatedAt || now,
@@ -276,6 +294,7 @@ export function createLocalCompositeStore(options = {}) {
           rating: b.rating || 0,
           faviconUrl: b.faviconUrl || node.faviconUrl || "",
           urlStatus: b.urlStatus || "valid",
+          lastOpenedAt: b.lastOpenedAt || "",
           folderId: b.folderId || "",
           createdAt: b.createdAt || now,
           updatedAt: b.updatedAt || now,

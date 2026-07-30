@@ -6,6 +6,8 @@
 // - teardown(): void — release every backend listener init() registered
 // - create(bookmark): Promise<Bookmark>
 // - update(id, patch): Promise<void>
+// - updateMany(patches: {id, ...patch}[]): Promise<void> (optional; one round-trip
+//   for a whole selection. Callers fall back to update() per bookmark.)
 // - remove(id): Promise<void>
 // - bulkReplace(bookmarks): Promise<void>
 // - reorderBookmarks(orderedIds: string[]): Promise<void> (optional)

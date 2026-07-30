@@ -10,15 +10,45 @@ import {
   sortBookmarks,
   normalizeTag,
 } from "./bookmarkFilters.js";
+import { findBrokenLinks } from "./linkHealth.js";
+import { findInFolder } from "./folderTree.js";
+import { findNeverOpened } from "./openHistory.js";
 
 export const EMPTY_FILTERS = Object.freeze({
   text: "",
   includeTags: [],
   excludeTags: [],
   minRating: 0,
+  // #47: only the links the last check could not reach.
+  brokenOnly: false,
+  // #55: a folder path, `UNFILED`, or "" for the whole collection. Clicking a
+  // folder in the tree is a manual filter like any other, which is what makes it
+  // combinable with the rest and savable as a view.
+  folder: "",
+  // #50: only what nothing has opened.
+  neverOpened: false,
   sortBy: "",
   order: "asc",
 });
+
+/**
+ * The fields a manual sort can order by, with the labels the controls show.
+ * Kept with the filter semantics rather than in the bar, because a saved view
+ * (#49) has to know which values are real when reading one back from storage,
+ * and two lists would drift.
+ */
+export const SORT_FIELDS = Object.freeze([
+  { value: "", label: "Default order" },
+  { value: "title", label: "Title" },
+  { value: "url", label: "URL" },
+  { value: "rating", label: "Rating" },
+  { value: "folderId", label: "Folder" },
+  { value: "createdAt", label: "Date added" },
+  { value: "lastOpenedAt", label: "Last opened" },
+  { value: "updatedAt", label: "Date modified" },
+]);
+
+export const isSortableField = (value) => SORT_FIELDS.some((field) => field.value === value);
 
 // Tag chips cycle through three states rather than offering separate include/exclude
 // controls: unset → include → exclude → unset.
@@ -48,6 +78,9 @@ export function hasActiveFilters(filters) {
     filters.includeTags?.length ||
     filters.excludeTags?.length ||
     filters.minRating > 0 ||
+    filters.brokenOnly ||
+    filters.neverOpened ||
+    filters.folder ||
     filters.sortBy
   );
 }
@@ -78,27 +111,35 @@ export function deriveTagCounts(list = []) {
 }
 
 /**
+ * One narrowing each, applied in this order. A filter that is not set passes the
+ * list through, so adding a criterion is adding an entry here rather than another
+ * branch in the middle of the pipeline.
+ */
+const NARROWERS = [
+  (filters, list) => {
+    const text = (filters.text || "").trim();
+    return text ? searchBookmarks(text, list) : list;
+  },
+  (filters, list) =>
+    filters.includeTags?.length || filters.excludeTags?.length
+      ? findWithTags(filters.includeTags || [], filters.excludeTags || [], list)
+      : list,
+  (filters, list) =>
+    filters.minRating > 0
+      ? filterByRating({ minRating: filters.minRating, comparator: "gte" }, list)
+      : list,
+  (filters, list) => (filters.brokenOnly ? findBrokenLinks(list) : list),
+  (filters, list) => (filters.neverOpened ? findNeverOpened(list) : list),
+  (filters, list) => (filters.folder ? findInFolder(filters.folder, list) : list),
+];
+
+/**
  * Apply manual filters on top of an already agent-planned list.
  * Sort runs last so an explicit manual sort wins over any sort the agent applied.
  */
 export function applyManualFilters(filters, list = []) {
   if (!filters) return list;
   let result = list;
-
-  const text = (filters.text || "").trim();
-  if (text) result = searchBookmarks(text, result);
-
-  if (filters.includeTags?.length || filters.excludeTags?.length) {
-    result = findWithTags(filters.includeTags || [], filters.excludeTags || [], result);
-  }
-
-  if (filters.minRating > 0) {
-    result = filterByRating({ minRating: filters.minRating, comparator: "gte" }, result);
-  }
-
-  if (filters.sortBy) {
-    result = sortBookmarks(filters.sortBy, filters.order || "asc", result);
-  }
-
-  return result;
+  for (const narrow of NARROWERS) result = narrow(filters, result);
+  return filters.sortBy ? sortBookmarks(filters.sortBy, filters.order || "asc", result) : result;
 }

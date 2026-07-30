@@ -15,19 +15,39 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
 
 ## Features
 
+- Saved views
+  - Name what is on screen — an agent plan, manual filters, or both — and return
+    to it from a chip
+- Folder tree
+  - Browse, filter, and rearrange folders; drag bookmarks into one, drag a folder
+    into another, rename or remove one without losing what it held
+- Semantic search
+  - Finds “that article about vector databases” even when none of those words are
+    in the bookmark, and keeps the exact matches at the top
 - Natural language search (AI agent)
-  - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”
-  - Persist sorted order across all bookmarks (e.g., “reorder descending by title”)
+  - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”, “clean up my bookmarks”
+  - Persist sorted order across all bookmarks (e.g., “reorder descending by title”). A saved order
+    is applied within each folder, since a bookmark’s position only exists among its siblings.
 - Import/Export
   - JSON array of bookmarks
   - Netscape Bookmark HTML (compatible with browsers’ export files)
 - Bookmark management
   - Add, edit, delete, tag, folder, rating, favicon support
   - Multi‑select (Cmd/Ctrl+Click), open in new tab (Shift+Click)
-  - Detect and remove duplicates (by title + URL)
+  - Detect and remove duplicates by the page they point at, with an optional
+    second opinion from your LLM on the same article saved under two URLs
+  - Bulk edit a multi-selection: add or remove tags, move to a folder, set or
+    clear ratings
+  - Undo the last ten changes with Cmd/Ctrl+Z — edits, adds, deletes, imports,
+    de‑duplication, sorts, and “replace all”
 - URL status
   - Lightweight validity check via HEAD request from the extension service worker
   - One‑click “Ignore checking” toggle per bookmark
+  - Sweep the whole collection for dead links, resumable, and filter to what it
+    found
+- Suggestions that read the page, not just its URL
+  - The extension fetches the page in its service worker and feeds its own title,
+    description, and opening text to the model
 - LLM integration (runtime‑configurable)
   - Gemini, OpenAI (ChatGPT), Grok (x.ai), Ollama (local), LM Studio (local)
   - Model discovery (where supported), custom base URLs, stored per provider
@@ -106,10 +126,26 @@ The extension ships two surfaces from one build:
 | Toolbar popup | `popup.html` | Quick-add for the current tab: prefilled title/URL, tags, rating, folder. Detects an already-saved URL and edits it instead of duplicating. |
 | Full app      | `index.html` | The complete manager (search, agent, import/export, options). Opened from the popup's "Open full app".                                      |
 
+### Getting there without opening it
+
+- **Address bar.** Type `bm` then a space, then anything: every word has to appear in a saved
+  bookmark's title or address, so typing more narrows the list. Enter opens the highlighted match, or
+  the best match if you never picked one. Matching happens locally against what you have saved — no
+  network call and no model, because an address bar that waits feels broken. Tags and ratings live in
+  Bookmarkit's own metadata rather than Chrome's tree, so they are not searched here; use the full
+  app's search for those.
+- **Right-click.** "Bookmark with bookmarkit" on a page saves the page. On a link it saves the
+  **link**, with the link text as the title — quick-add opens in its own small window because a link
+  is not the tab you are on.
+- **Keyboard.** `Alt+Shift+B` opens quick-add for the current page. Chrome reserves `Ctrl+Shift+B` /
+  `⌘+Shift+B` for its own bookmarks bar and silently drops an extension that asks for them, which is
+  why the default is `Alt`. Rebind it at `chrome://extensions/shortcuts`.
+
 Permissions requested (`public/manifest.json`):
 
 - `bookmarks` — the default store keeps title/URL in the real Chrome bookmark tree.
 - `storage` — settings, themes, and the per-bookmark metadata layer.
+- `contextMenus` — the right-click entry point above.
 - `<all_urls>` — lets the background service worker run URL reachability checks from a privileged
   context (bypassing page CORS), and lets the popup read the active tab's title/URL. Requests are
   restricted to public http(s) hosts; private, loopback, and link-local addresses are blocked, and
@@ -242,6 +278,10 @@ are hand-writing or scripting the file:
     folder paths, so exporting and re-importing keeps your folder structure
   - Tags and rating travel in `TAGS` and `RATING` attributes. Other browsers
     ignore `RATING`; Firefox understands `TAGS`
+- Imported folders are created in your real bookmark tree, so `chrome://bookmarks` and your synced
+  devices see the same structure Bookmarkit shows
+- Replacing all bookmarks writes the new set before removing the old one. If any bookmark cannot be
+  written, nothing is replaced and your existing collection is left as it was.
 
 ## Natural language commands (examples)
 
@@ -250,6 +290,8 @@ are hand-writing or scripting the file:
 - filter rating >= 4 then sort by title asc
 - show 3 stars or more
 - remove duplicates
+- clean up my bookmarks
+- suggest folders for these
 - show all
 - reorder ascending by title
 - limit first 10
@@ -264,6 +306,85 @@ tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, and similar) are all
 ignored. Path, remaining query, and fragment still distinguish pages. When
 copies differ, the one carrying tags, a rating, or a description is the one kept.
 
+If an LLM provider is configured, “Remove Duplicates” then takes a second look at
+the pairs no rule can settle — the same article under a canonical and a
+syndicated URL, or a paginated page and its print view. Those proposals appear in
+the same confirmation dialog with the reason for each pair spelled out, so nothing
+is deleted before you have read why it was suggested. Without a usable provider —
+no API key entered, or an encrypted key you have not unlocked this session — the
+rule-based pass is all that runs and nothing leaves your machine, exactly as
+before.
+
+## Folders
+
+There are no folder records anywhere. A folder is a path a bookmark carries in
+`folderId`, so a folder exists because something is in it and stops existing when
+the last bookmark leaves.
+
+"Folders" in the header shows the tree those paths imply, with a count per folder —
+the total including subfolders, marked with `*` when some of it is nested deeper.
+Clicking a folder filters to it and everything under it; clicking it again clears
+that. It is an ordinary filter, so it combines with tags, ratings and search, and a
+saved view can hold it.
+
+Rearranging:
+
+- Drag bookmarks onto a folder to move them. A dragged card takes the whole
+  selection with it, so moving thirty is one drag — and one undo.
+- Drag a folder onto another to renest it; drop it on "All bookmarks" to bring it
+  back to the top level.
+- Rename a folder in place. Its subfolders and their bookmarks come along.
+- Removing a folder never deletes bookmarks: its contents move up into its parent.
+
+The folder field in the add/edit form completes against the folders you already
+have, since typing `Wrok` used to make a folder rather than a mistake. Use `/` for
+subfolders, as in `Work/Project A`.
+
+Two spellings of one name — `Work` and `work` — are treated as the same folder
+everywhere, because a tree showing both would split the count and filtering either
+would show the other's bookmarks.
+
+## Semantic search
+
+Substring matching only finds words that are literally there. With an LLM provider
+that offers embeddings — Gemini, OpenAI, Ollama, or LM Studio; Grok has no
+embeddings endpoint — searching also compares meaning, so “storing vectors” can
+surface a bookmark titled “Pinecone basics”.
+
+Exact matches still come first, in their usual order; semantic hits are added
+after them. Nothing is taken away, so a search never gets worse.
+
+Each bookmark is embedded once and its vector is kept locally, filed under a
+fingerprint of the text it came from — edit a bookmark and only that one is
+re-embedded. After the first search, the only request a search makes is for the
+query itself, which is also why semantic search keeps working when the agent call
+fails: the index is already on your machine.
+
+With no provider, no key, a provider without embeddings, or a locked key, search is
+exactly the substring search it always was.
+
+## Cleaning up with the agent
+
+“Clean up my bookmarks” asks your LLM for tags, a folder, and — where a bookmark
+has none — a description, for everything currently in view. Ask for less and it
+does less: “suggest tags for these” proposes tags only.
+
+Nothing is written until you say so. What comes back is a diff, one row per
+bookmark, showing exactly which fields would change; every row starts ticked, and
+unticking one drops it. Applying the rest counts as a single change, so one
+Cmd/Ctrl+Z puts the whole tidy-up back.
+
+What it will not do:
+
+- Touch a title or a URL. Those say which page a bookmark is.
+- Replace your tags. Suggestions are added to what is already there.
+- Overwrite a description you wrote. It only fills in empty ones.
+- Invent a folder next to one that already fits: a suggested `work/rust` becomes
+  your existing `Work/Rust` rather than a second folder beside it.
+
+Large collections are asked about in slices of 20, with progress shown and a Stop
+button. A slice the model fumbles costs only its own suggestions.
+
 ## Keyboard shortcuts
 
 - Click: select a bookmark
@@ -274,6 +395,141 @@ copies differ, the one carrying tags, a rating, or a description is the one kept
 - Cmd/Ctrl+A: select all visible
 - Cmd/Ctrl+D or D: delete selected (with confirmation)
 - Space (on focused tile): select/open depending on context
+- Cmd/Ctrl+Z: undo the last change
+
+## Saved views
+
+Anything you can narrow the list down to can be named and kept. Once a search or
+a filter is active, **Save current view** appears above the list; saved views
+become chips you can click to return to them, and the chip for the view you are
+currently looking at is highlighted.
+
+A view remembers both halves of the screen: the agent's plan and the manual
+filters. It is stored under `bm_smart_views` in the extension's local storage
+(`localStorage` in the web build), and it holds only the plan and the filters —
+no bookmark data.
+
+Views are read back as untrusted data. A stored plan goes through the same
+whitelist an AI response does, so a view that was hand-edited, imported, or
+written by a newer version cannot introduce an action this version does not know.
+Anything unrecognised is dropped, and a view left with nothing to restore
+disappears rather than becoming a chip that does nothing.
+
+## Bulk editing
+
+Select several bookmarks (Cmd/Ctrl+Click, or Cmd/Ctrl+A for everything shown) and
+a bar appears above the list:
+
+- **Add tags** and **remove tags** are additive, not a replacement. Adding
+  `reading` to forty bookmarks keeps whatever else each of them was tagged with.
+  Matching ignores case, so removing `react` also removes `React`.
+- **Folder** moves the selection into an existing folder, a new path you type, or
+  out of any folder.
+- **Rating** sets or clears a rating across the selection.
+
+The bar says what it is about to do and how many bookmarks it would leave alone
+because they already match. Those are not written at all, so bulk-tagging does
+not stamp a new modified date on bookmarks it did not change. Past ten
+bookmarks, Apply asks once more before writing. The whole batch is one change,
+so one Cmd/Ctrl+Z takes all of it back.
+
+## Undo
+
+Every change to your bookmarks can be taken back, up to the last ten. A toast
+offers the newest one for a few seconds; Cmd/Ctrl+Z reaches back through the
+rest, whether or not their toasts are still showing.
+
+- Deletes and “replace all” (a JSON import that overwrites, for example) keep
+  their toast until you use or dismiss it, since a timeout is no safety net for
+  losing a whole collection.
+- Undoing a delete or an overwrite restores the bookmarks with their tags,
+  ratings, folders, and notes, not just their titles and URLs.
+- Undo history lives in the page. Closing or reloading the app clears it, and it
+  is not offered in the quick‑add popup, which closes as soon as it saves.
+
+## Where suggestions get their facts
+
+“Suggest” for a description or tags used to reason from the URL and whatever title
+the browser supplied, which is close to nothing for an address like
+`example.com/p/8812`. In the extension, the page is now asked directly.
+
+- The fetch happens in the background service worker: public http(s) only, no
+  redirects followed, HTML only, and at most the first 256 KB of it.
+- Cookies are never sent. What the model sees is the page an anonymous visitor
+  gets, not your logged‑in view of it.
+- The HTML is read by scanning the text, never by building a document, so nothing
+  in a fetched page can run, load, or resolve anything.
+- The page's words go to the model inside the same containment as everything else
+  you did not type — it is told not to follow instructions found in there.
+- An empty title is filled in from the page. A title you wrote is never
+  overwritten.
+- In the web build there is no service worker, so suggestions work from the URL as
+  before.
+
+## Checking for dead links
+
+Bookmarks rot. **Check Links** in the header sweeps the collection and marks
+whatever it cannot reach, and the filter bar's **Broken only** toggle (or asking
+the agent for your broken links) shows the results.
+
+- The sweep is something you start, not something that happens quietly: checking
+  every bookmark contacts every host you have saved.
+- It goes a few links at a time with pauses between them, so a large collection
+  does not look like a scanner, and it backs off when nothing can be reached —
+  usually a sign your connection dropped rather than that the web did.
+- It remembers what it checked. Stopping it, closing the app, or coming back next
+  week resumes where it left off instead of starting over; a link checked in the
+  last week is left alone.
+- Only public http(s) addresses are checked, and a bookmark you marked “Ignore
+  checking” is skipped entirely.
+- A broken link is never re-pointed automatically. Redirect targets come from the
+  remote server, and following one from a privileged fetch is exactly the hole
+  the URL checks are guarded against, so what to do about a dead link is left to
+  you: recover it from an archive (below), fix it in the form, or select the broken
+  ones and delete them together.
+
+### Recovering a dead link
+
+Once a sweep has found dead links, **Find Archived Copies** appears beside **Check
+Links** and asks the Internet Archive whether it kept a copy of each one. It shows
+what it found as a diff — old address, snapshot address — and nothing is written
+until you accept it, one row at a time or all at once.
+
+- It only appears when there is something to ask about, and it asks about the dead
+  links you have selected, or the dead links on screen when nothing is selected. So
+  a folder, a search, or a multi-selection is how you scope it.
+- Asking contacts `archive.org`, one request per dead link, paced and capped per
+  run. Only public http(s) addresses are asked about: an internal hostname is not
+  something to hand to a third party.
+- The address that comes back is checked before it can be used — it has to be a
+  public https address on the archive's own host — because a snapshot address is a
+  remote server's claim like any other.
+- Accepting is one undo, however many links were re-pointed, and each recovered
+  bookmark is marked for re-checking rather than assumed good.
+
+## The weekly digest
+
+**Digest** in the header answers the question a large collection eventually
+raises: what did I save this week, and what have I been ignoring? It reports three
+things.
+
+- **Saved this week**, grouped into named themes. The grouping is the only part a
+  provider does; with none configured the additions are grouped by the folder or
+  tag they already carry, so the digest works without AI.
+- **Never opened** — saved more than a week ago and never opened since. **Show
+  never opened** turns this into the filter-bar toggle of the same name, so you
+  can work through them with sorting, bulk editing and the rest.
+- **Untagged** — filed in a hurry. **Triage the untagged** hands exactly those to
+  the organizer for tag suggestions, with the same diff to review.
+
+Opening a bookmark from anywhere in the app records when — this is the only thing
+Bookmarkit observes about a bookmark rather than being told, it stays on your
+device with the rest of your bookmarks, and it is what “never opened” and the
+**Last opened** sort read. Nothing recorded means never opened, so bookmarks saved
+before this existed all read as never opened until you open them.
+
+Neither the additions nor the neglected list nags about the last week's arrivals:
+something saved yesterday has not been ignored.
 
 ## URL validation
 
@@ -282,6 +538,8 @@ copies differ, the one carrying tags, a rating, or a description is the one kept
   URL is sent only to the site itself.
 - Only public http(s) hosts are checked. Private, loopback, link-local, and cloud-metadata
   addresses are refused, and redirects are not followed (both are SSRF guards).
+- The web build has no service worker, so the check is an ordinary fetch — but the
+  same two rules hold: public hosts only, and redirects are not followed.
 - If a site is blocked or unreachable, status may show “invalid”.
 - You can toggle “Ignore checking” per bookmark.
 

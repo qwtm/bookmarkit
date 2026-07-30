@@ -14,11 +14,15 @@ const KNOWN_ACTIONS = new Set([
   "importBookmarks",
   "exportBookmarks",
   "removeDuplicates",
+  "organizeBookmarks",
   "help",
   "findIncludes",
   "findStartsWith",
   "findWithTags",
   "filterByRating",
+  "findBrokenLinks",
+  "findNeverOpened",
+  "weeklyDigest",
   "sortBookmarks",
   "limitResults",
   "limitFirst",
@@ -30,11 +34,31 @@ const KNOWN_ACTIONS = new Set([
 ]);
 
 const FIELD_VALUES = new Set(["title", "url", "description", "tags"]);
-const SORT_BY_VALUES = new Set(["title", "rating", "url", "folder", "createdAt", "updatedAt"]);
+const SORT_BY_VALUES = new Set([
+  "title",
+  "rating",
+  "url",
+  "folder",
+  "createdAt",
+  "updatedAt",
+  "lastOpenedAt",
+]);
 const ORDER_VALUES = new Set(["asc", "desc"]);
 const DIRECTION_VALUES = new Set(["first", "last"]);
 const SCOPE_VALUES = new Set(["current", "all"]);
 const COMPARATOR_VALUES = new Set(["gte", "lte", "eq"]);
+const ORGANIZE_FIELD_VALUES = new Set(["tags", "folderId", "description"]);
+
+// The names a model reaches for when it means one of those. "Suggest folders" is
+// the wording the README uses, so `folder` arriving instead of `folderId` is the
+// request being understood, not an unsupported field.
+const ORGANIZE_FIELD_ALIASES = new Map([
+  ["folder", "folderId"],
+  ["folders", "folderId"],
+  ["folderpath", "folderId"],
+  ["tag", "tags"],
+  ["descriptions", "description"],
+]);
 
 // ─── Utility coercions ────────────────────────────────────────────────────────
 
@@ -64,6 +88,38 @@ const ACTION_SCHEMAS = {
   importBookmarks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
   exportBookmarks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
   removeDuplicates: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+  // #47: takes no parameters — the status it filters on was written by the sweep.
+  findBrokenLinks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+  // #50: both take no parameters — one narrows the view, one opens the digest.
+  findNeverOpened: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+  weeklyDigest: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+
+  // #44: which of tags, folder and description to propose. Anything else asked
+  // for is dropped rather than defaulted, so "clean up the titles" cannot become
+  // a plan that rewrites titles.
+  organizeBookmarks(p) {
+    const errors = [];
+    const named = p?.fields != null;
+    const asked = Array.isArray(p?.fields) ? p.fields : named ? [p.fields] : [];
+    const fields = [];
+    for (const field of asked) {
+      const name = ORGANIZE_FIELD_ALIASES.get(String(field).trim().toLowerCase()) ?? field;
+      if (!ORGANIZE_FIELD_VALUES.has(name)) {
+        errors.push(`Unknown organize field "${field}", ignored`);
+        continue;
+      }
+      if (!fields.includes(name)) fields.push(name);
+    }
+    // Naming no fields means all of them, which is what "clean up my bookmarks"
+    // asks for. Naming only fields this cannot touch is a refusal, though — "tidy
+    // up the titles" must do nothing rather than propose tags instead.
+    if (named && fields.length === 0) return { valid: false, sanitized: {}, errors };
+    return {
+      valid: true,
+      sanitized: { fields: fields.length > 0 ? fields : [...ORGANIZE_FIELD_VALUES] },
+      errors,
+    };
+  },
   help: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
 
   searchBookmarks(p) {

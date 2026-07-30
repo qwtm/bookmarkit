@@ -3,18 +3,8 @@
 // convenience layer on top of these same primitives, not a prerequisite for them.
 
 import React, { useMemo, useState } from "react";
-import { TAG_STATE, getTagState, hasActiveFilters } from "../utils/manualFilters.js";
+import { SORT_FIELDS, TAG_STATE, getTagState, hasActiveFilters } from "../utils/manualFilters.js";
 import { Button, Input, Select } from "./DesignSystem.jsx";
-
-const SORT_FIELDS = [
-  { value: "", label: "Default order" },
-  { value: "title", label: "Title" },
-  { value: "url", label: "URL" },
-  { value: "rating", label: "Rating" },
-  { value: "folderId", label: "Folder" },
-  { value: "createdAt", label: "Date added" },
-  { value: "updatedAt", label: "Date modified" },
-];
 
 const VISIBLE_TAG_LIMIT = 12;
 
@@ -107,6 +97,28 @@ const FilterBar = React.memo(function FilterBar({
             ...[1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${"★".repeat(n)}+` })),
           ]}
         />
+
+        {/* #47: what the sweep found, as a filter — the status it reads is written
+            by the link check, so this stays useful with no LLM and no network. */}
+        <Button
+          type="button"
+          intent={filters.brokenOnly ? "primary" : "secondary"}
+          onClick={() => onChange({ ...filters, brokenOnly: !filters.brokenOnly })}
+          aria-pressed={Boolean(filters.brokenOnly)}
+        >
+          Broken only
+        </Button>
+
+        {/* #50: the other filter that reads something the app observed rather than
+            something a user typed. */}
+        <Button
+          type="button"
+          intent={filters.neverOpened ? "primary" : "secondary"}
+          onClick={() => onChange({ ...filters, neverOpened: !filters.neverOpened })}
+          aria-pressed={Boolean(filters.neverOpened)}
+        >
+          Never opened
+        </Button>
 
         <Select
           id="filter-sort"
