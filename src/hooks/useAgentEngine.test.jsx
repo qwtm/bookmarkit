@@ -175,8 +175,33 @@ describe("useAgentEngine (#26)", () => {
 
     await act(async () => engine.run("do something"));
 
-    expect(onSteps).not.toHaveBeenCalled();
     expect(showMessage).toHaveBeenCalledWith(expect.any(String), "error");
+    // What the user typed becomes a plain search, not an empty plan.
+    expect(onSteps).toHaveBeenCalledWith(
+      [{ action: "searchBookmarks", parameters: { searchTerm: "do something" } }],
+      expect.any(Array)
+    );
+  });
+
+  // #46: the fallback search is announced like any other step, so what the app
+  // does with a search — widening it from the local vector index — happens even
+  // when the request that would have planned it failed.
+  it("announces the fallback search as a step", async () => {
+    const onSteps = vi.fn();
+    generate.mockRejectedValue(new Error("500 upstream"));
+    render(<Probe onSteps={onSteps} />);
+
+    await act(async () => engine.run("that article about vector databases"));
+
+    expect(onSteps).toHaveBeenCalledWith(
+      [
+        {
+          action: "searchBookmarks",
+          parameters: { searchTerm: "that article about vector databases" },
+        },
+      ],
+      expect.any(Array)
+    );
   });
 
   // #20: a conversation narrows the view. Without the merge each query would

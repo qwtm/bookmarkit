@@ -170,6 +170,52 @@ an `apply` — and hands it to `useUndoHistory`. Three consequences worth keepin
   is what `Cmd+Z` walks back through, and writes an undo makes are not recorded,
   so undo never turns into redo. A destructive write's offer does not expire.
 
+## Semantic search
+
+Search is three layers, and the order matters. `searchBookmarks` in
+`utils/bookmarkFilters.js` is substring matching: exact, free, offline, and never
+removed. `utils/semanticSearch.js` is the pure vector work — what text represents a
+bookmark, when that text has changed enough to re-embed, cosine similarity, and how
+a ranking merges with a substring result. `llm/embeddings.js` makes the requests,
+and `useSemanticSearch` owns the cached index.
+
+`llm/embeddings.js` sits beside the chat providers rather than inside them: an
+embedding is a different endpoint and a different model, and Grok has none at all,
+so putting it on the `LLMProvider` interface would mean a method a third of the
+providers cannot implement.
+
+The index is one value in extension storage: bookmark id to a vector, a fingerprint
+of the text it came from, and what produced it — provider, model, endpoint. Those two
+strings are the whole caching rule: a bookmark is embedded once, an edited one is
+re-embedded, and switching provider or embedding model invalidates every vector at
+once, because vectors from two models are not comparable rather than merely less
+accurate. A deleted bookmark is forgotten on the next pass, so no write path needs
+to know the index exists. It reads back defensively, like any other stored value, and
+a vector with no recorded origin reads as one nothing matches.
+
+Two consequences worth stating:
+
+- **A failed agent call no longer costs the search.** The fallback search is
+  announced through `onSteps` like any other step, and matching is local once
+  vectors exist, so a natural-language query still finds things.
+- **The ranking is a display step, not a query.** The app rewrites its own
+  `searchBookmarks` step into `semanticMatches`, carrying the query and the ranked
+  ids, because widening has to see what substring matching filtered out. That
+  action is deliberately absent from the parser whitelist: it is written by the app
+  from a local ranking, never by a model. It shares `searchBookmarks`'s slot in
+  `mergeAgentPlan` — a widened search is still that search, and a second query has
+  to displace it — and saving a view turns it back into the query it came from,
+  since a ranking describes one moment and would go stale.
+
+Each provider's embedding call follows that provider's own contract for a configured
+base URL, which the chat providers disagree about: OpenAI's base is the `/v1` root,
+LM Studio's is the host. Getting that wrong would break search only for the installs
+that configured one.
+
+Searching sends the query text to the provider, so it goes through the same
+`isProviderReady` gate the other model features use: a provider name is not
+consent.
+
 ## Persistence boundary
 
 `src/stores/index.js` selects one of three implementations behind the shared

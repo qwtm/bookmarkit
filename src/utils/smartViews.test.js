@@ -239,3 +239,32 @@ describe("matchingViewId (#49)", () => {
     expect(matchingViewId([], plan, EMPTY_FILTERS)).toBeNull();
   });
 });
+
+// #46: a ranking describes one moment; the query still means something next week.
+describe("saving a semantic search (#46)", () => {
+  it("saves the query rather than the ids it returned", () => {
+    const view = makeView("Vector stuff", [
+      {
+        action: "semanticMatches",
+        parameters: { searchTerm: "vector databases", ids: ["1", "7"] },
+      },
+    ]);
+
+    expect(view.plan).toEqual([
+      { action: "searchBookmarks", parameters: { searchTerm: "vector databases" } },
+    ]);
+  });
+
+  it("still recognises the view it came from as the active one", () => {
+    const view = makeView("Vector stuff", [
+      { action: "semanticMatches", parameters: { searchTerm: "vector databases", ids: ["1"] } },
+    ]);
+
+    const active = matchingViewId(
+      [view],
+      [{ action: "semanticMatches", parameters: { searchTerm: "vector databases", ids: ["9"] } }],
+      undefined
+    );
+    expect(active).toBe(view.id);
+  });
+});

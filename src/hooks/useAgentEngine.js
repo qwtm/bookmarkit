@@ -153,8 +153,12 @@ export function useAgentEngine({
       const { message } = classifyLLMError(error);
       showMessage(message, "error");
       // A failed request still leaves the user with something: treat what they
-      // typed as a plain search rather than dropping the query.
-      onPlan({ action: "searchBookmarks", parameters: { searchTerm: userQuery } });
+      // typed as a plain search rather than dropping the query. The step goes
+      // through `onSteps` as well, so a fallback search is as good as any other
+      // — #46 widens it with the local vector index, which needs no plan at all.
+      const fallback = { action: "searchBookmarks", parameters: { searchTerm: userQuery } };
+      onPlan(fallback);
+      await onSteps([fallback], [fallback]);
     } finally {
       if (requestId === requestIdRef.current) setIsProcessing(false);
     }

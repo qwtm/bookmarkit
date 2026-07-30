@@ -127,14 +127,27 @@ export const isViewWorthSaving = (plan, filters) => {
 };
 
 /**
+ * A cached ranking is not a query. #46's `semanticMatches` step carries the ids a
+ * vector search returned, which describe one moment: bookmarks get added, edited
+ * and deleted, and a view that replayed last week's ranking would quietly show the
+ * wrong answer. Saved as the query it came from, so applying the view searches
+ * again instead of remembering.
+ */
+const asQuery = (step) =>
+  step?.action === "semanticMatches"
+    ? { action: "searchBookmarks", parameters: { searchTerm: step.parameters?.searchTerm || "" } }
+    : step;
+
+/**
  * A view of the current screen, sanitized on the way in as well as out — the app
  * holds a plan the parser already vetted, but a name is user input.
  */
 export function makeView(name, plan, filters) {
+  const steps = Array.isArray(plan) ? plan : plan ? [plan] : [];
   return sanitizeView({
     id: crypto.randomUUID(),
     name,
-    plan: Array.isArray(plan) ? plan : plan ? [plan] : [],
+    plan: steps.map(asQuery),
     filters,
   });
 }
@@ -163,7 +176,7 @@ const sameShape = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? nu
  * @returns {string|null} the view's id.
  */
 export function matchingViewId(views, plan, filters) {
-  const currentPlan = Array.isArray(plan) ? plan : plan ? [plan] : [];
+  const currentPlan = (Array.isArray(plan) ? plan : plan ? [plan] : []).map(asQuery);
   const currentFilters = sanitizeFilters(filters);
   const match = (views || []).find(
     (view) => sameShape(view.plan, currentPlan) && sameShape(view.filters, currentFilters)

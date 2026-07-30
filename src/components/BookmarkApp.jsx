@@ -23,6 +23,7 @@ import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useLinkSweep } from "../hooks/useLinkSweep.js";
 import { useOrganizer } from "../hooks/useOrganizer.js";
+import { useSemanticSearch } from "../hooks/useSemanticSearch.js";
 import { useLLMSettings } from "../hooks/useLLMSettings.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useDebounce } from "../hooks/useDebounce.js";
@@ -352,6 +353,12 @@ const BookmarkApp = () => {
   // #44: A tidy-up is a proposal. The model answers, the diff is reviewed, and
   // only what the user keeps is written — through the bulk-edit path, so the whole
   // tidy-up is one undo entry rather than a hundred.
+  const semantic = useSemanticSearch({
+    provider: runtimeProvider,
+    providerOptions,
+    locked: encryption.locked,
+  });
+
   const organizer = useOrganizer({
     provider: runtimeProvider,
     providerOptions,
@@ -558,6 +565,26 @@ const BookmarkApp = () => {
   // What a plan *does* to the app, as opposed to how it was obtained. #21: in the
   // priority order the model assigned, and awaited, so a step that writes finishes
   // before the next one starts.
+  // #46: A search reaches the vector index too, and the answer replaces the step
+  // that asked — `semanticMatches` carries the query with it, because widening has
+  // to see what substring matching filtered out. With no index and no provider this
+  // returns nothing and the plain search stands.
+  const widenSearch = useCallback(
+    async (searchTerm) => {
+      const ids = await semantic.search(searchTerm, bookmarks);
+      if (ids.length === 0) return;
+      setLastAction((plan) => {
+        const steps = Array.isArray(plan) ? plan : plan ? [plan] : [];
+        return steps.map((step) =>
+          step.action === "searchBookmarks" && step.parameters?.searchTerm === searchTerm
+            ? { ...step, action: "semanticMatches", parameters: { searchTerm, ids } }
+            : step
+        );
+      });
+    },
+    [bookmarks, semantic]
+  );
+
   const runPlanSteps = useCallback(
     async (steps, plan) => {
       // What this plan shows, computed from the plan itself for the same reason
@@ -577,6 +604,8 @@ const BookmarkApp = () => {
           if (ids.length > 0) stageDeletion(ids, reasons);
           else showCustomMessage("No duplicate bookmarks found in the current view.", "info");
         }
+        if (step.action === "searchBookmarks" && step.parameters?.searchTerm)
+          await widenSearch(step.parameters.searchTerm);
         if (step.action === "organizeBookmarks")
           await handleOrganize(inView(), step.parameters?.fields);
         if (REORDER_ACTIONS.includes(step.action)) await handlePersistReorderFromAgent(step);
@@ -589,6 +618,7 @@ const BookmarkApp = () => {
       handlePersistReorderFromAgent,
       proposeSemanticDuplicates,
       stageDeletion,
+      widenSearch,
     ]
   );
 
