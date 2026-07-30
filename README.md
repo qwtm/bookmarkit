@@ -19,7 +19,7 @@ The project is built with Vite, styled with Tailwind CSS, and designed for flexi
   - Name what is on screen — an agent plan, manual filters, or both — and return
     to it from a chip
 - Natural language search (AI agent)
-  - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”
+  - Examples: “find github”, “find tags: react then sort by rating descending”, “show 3 stars or more”, “remove duplicates”, “clean up my bookmarks”
   - Persist sorted order across all bookmarks (e.g., “reorder descending by title”)
 - Import/Export
   - JSON array of bookmarks
@@ -247,6 +247,8 @@ Bookmark JSON shape (id is optional on import):
 - filter rating >= 4 then sort by title asc
 - show 3 stars or more
 - remove duplicates
+- clean up my bookmarks
+- suggest folders for these
 - show all
 - reorder ascending by title
 - limit first 10
@@ -260,6 +262,28 @@ they are titled: `http` and `https`, `www.` and bare, a trailing slash, and
 tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref`, and similar) are all
 ignored. Path, remaining query, and fragment still distinguish pages. When
 copies differ, the one carrying tags, a rating, or a description is the one kept.
+
+## Cleaning up with the agent
+
+“Clean up my bookmarks” asks your LLM for tags, a folder, and — where a bookmark
+has none — a description, for everything currently in view. Ask for less and it
+does less: “suggest tags for these” proposes tags only.
+
+Nothing is written until you say so. What comes back is a diff, one row per
+bookmark, showing exactly which fields would change; every row starts ticked, and
+unticking one drops it. Applying the rest counts as a single change, so one
+Cmd/Ctrl+Z puts the whole tidy-up back.
+
+What it will not do:
+
+- Touch a title or a URL. Those say which page a bookmark is.
+- Replace your tags. Suggestions are added to what is already there.
+- Overwrite a description you wrote. It only fills in empty ones.
+- Invent a folder next to one that already fits: a suggested `work/rust` becomes
+  your existing `Work/Rust` rather than a second folder beside it.
+
+Large collections are asked about in slices of 20, with progress shown and a Stop
+button. A slice the model fumbles costs only its own suggestions.
 
 ## Keyboard shortcuts
 

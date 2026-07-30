@@ -116,7 +116,9 @@ describe("previousValuesFor (#54)", () => {
       [{ id: "1" }]
     );
 
-    expect(previous).toEqual([{ id: "1", tags: "", folderId: "", rating: 0 }]);
+    // Each field's own empty value: undoing a first-ever tagging writes [] back,
+    // not a blank string a list would choke on.
+    expect(previous).toEqual([{ id: "1", tags: [], folderId: "", rating: 0 }]);
   });
 });
 

@@ -14,6 +14,7 @@ const KNOWN_ACTIONS = new Set([
   "importBookmarks",
   "exportBookmarks",
   "removeDuplicates",
+  "organizeBookmarks",
   "help",
   "findIncludes",
   "findStartsWith",
@@ -36,6 +37,7 @@ const ORDER_VALUES = new Set(["asc", "desc"]);
 const DIRECTION_VALUES = new Set(["first", "last"]);
 const SCOPE_VALUES = new Set(["current", "all"]);
 const COMPARATOR_VALUES = new Set(["gte", "lte", "eq"]);
+const ORGANIZE_FIELD_VALUES = new Set(["tags", "folderId", "description"]);
 
 // ─── Utility coercions ────────────────────────────────────────────────────────
 
@@ -67,6 +69,26 @@ const ACTION_SCHEMAS = {
   removeDuplicates: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
   // #47: takes no parameters — the status it filters on was written by the sweep.
   findBrokenLinks: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
+
+  // #44: which of tags, folder and description to propose. Anything else asked
+  // for is dropped rather than defaulted, so "clean up the titles" cannot become
+  // a plan that rewrites titles.
+  organizeBookmarks(p) {
+    const errors = [];
+    const asked = Array.isArray(p?.fields) ? p.fields : p?.fields != null ? [p.fields] : [];
+    const fields = [];
+    for (const field of asked) {
+      if (ORGANIZE_FIELD_VALUES.has(field)) fields.push(field);
+      else errors.push(`Unknown organize field "${field}", ignored`);
+    }
+    // No usable field named means all of them, which is what "clean up my
+    // bookmarks" asks for.
+    return {
+      valid: true,
+      sanitized: { fields: fields.length > 0 ? fields : [...ORGANIZE_FIELD_VALUES] },
+      errors,
+    };
+  },
   help: (_p) => ({ valid: true, sanitized: {}, errors: [] }),
 
   searchBookmarks(p) {

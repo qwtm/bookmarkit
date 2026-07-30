@@ -11,6 +11,7 @@ import {
 import { filterDuplicateImports, findDuplicateIds } from "../utils/duplicates.js";
 import { isBroken } from "../utils/linkHealth.js";
 import { fetchUrlStatus } from "../utils/urlStatus.js";
+import { organizePatches } from "../utils/organizePlan.js";
 import { isViewWorthSaving, matchingViewId } from "../utils/smartViews.js";
 import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
@@ -20,6 +21,7 @@ import { useBookmarkSelection } from "../hooks/useBookmarkSelection.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useLinkSweep } from "../hooks/useLinkSweep.js";
+import { useOrganizer } from "../hooks/useOrganizer.js";
 import { useLLMSettings } from "../hooks/useLLMSettings.js";
 import { useTheme } from "../hooks/useTheme.js";
 import { useDebounce } from "../hooks/useDebounce.js";
@@ -36,6 +38,7 @@ import OptionsModal from "./OptionsModal";
 import BookmarkList from "./BookmarkList.jsx";
 import BulkEditBar from "./BulkEditBar.jsx";
 import LinkSweepBar from "./LinkSweepBar.jsx";
+import OrganizeReviewModal from "./OrganizeReviewModal.jsx";
 import SmartViewBar from "./SmartViewBar.jsx";
 import { AgentPlan, Button, IconButton, Kbd, Modal, SearchBar, Toast } from "./DesignSystem.jsx";
 
@@ -114,6 +117,9 @@ const BookmarkApp = () => {
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [bookmarksToDelete, setBookmarksToDelete] = useState([]);
+  // #44: the diff a tidy-up is waiting to be reviewed through, empty when none is.
+  const [proposedChanges, setProposedChanges] = useState([]);
+  const [isApplyingChanges, setIsApplyingChanges] = useState(false);
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [messageModalContent, setMessageModalContent] = useState({ message: "", type: "info" });
   // #53: manual filter state, independent of the agent plan so neither clobbers the other.
@@ -331,6 +337,47 @@ const BookmarkApp = () => {
     setIsModalOpen(true);
   }, []);
 
+  // #44: A tidy-up is a proposal. The model answers, the diff is reviewed, and
+  // only what the user keeps is written — through the bulk-edit path, so the whole
+  // tidy-up is one undo entry rather than a hundred.
+  const organizer = useOrganizer({
+    provider: runtimeProvider,
+    providerOptions,
+    locked: encryption.locked,
+    showMessage: showCustomMessage,
+  });
+
+  const handleOrganize = useCallback(
+    async (fields) => {
+      const rows = await organizer.run(displayedBookmarks, fields ? { fields } : {});
+      if (rows.length === 0) {
+        showCustomMessage("Nothing to change — these bookmarks are already organized.", "info");
+        return;
+      }
+      setProposedChanges(rows);
+    },
+    [organizer, displayedBookmarks]
+  );
+
+  const handleApplyOrganize = useCallback(
+    async (acceptedIds) => {
+      const patches = organizePatches(proposedChanges, acceptedIds);
+      if (patches.length === 0) return;
+      setIsApplyingChanges(true);
+      try {
+        await applyBulkEdit(patches);
+        setProposedChanges([]);
+        showCustomMessage(`Updated ${patches.length} bookmark(s).`, "success");
+      } catch (e) {
+        console.error("Organize failed:", e);
+        showCustomMessage("Failed to apply the changes. Please try again.", "error");
+      } finally {
+        setIsApplyingChanges(false);
+      }
+    },
+    [applyBulkEdit, proposedChanges]
+  );
+
   const handleRemoveDuplicates = useCallback(() => {
     const ids = findDuplicateIds(displayedBookmarks);
     if (ids.length === 0) {
@@ -383,7 +430,8 @@ const BookmarkApp = () => {
     isDeleteConfirmModalOpen ||
     isHelpModalOpen ||
     isOptionsOpen ||
-    isMessageModalOpen;
+    isMessageModalOpen ||
+    proposedChanges.length > 0;
 
   useKeyboardShortcuts(
     {
@@ -491,10 +539,11 @@ const BookmarkApp = () => {
             setIsDeleteConfirmModalOpen(true);
           } else showCustomMessage("No duplicate bookmarks found in the current view.", "info");
         }
+        if (step.action === "organizeBookmarks") await handleOrganize(step.parameters?.fields);
         if (REORDER_ACTIONS.includes(step.action)) await handlePersistReorderFromAgent(step);
       }
     },
-    [bookmarks, handlePersistReorderFromAgent]
+    [bookmarks, handleOrganize, handlePersistReorderFromAgent]
   );
 
   const { isProcessing, run: runAgent } = useAgentEngine({
@@ -739,6 +788,21 @@ const BookmarkApp = () => {
             onShowBroken={showBrokenOnly}
           />
 
+          {organizer.running && (
+            <div
+              className="mb-4 p-3 rounded-lg border border-border bg-primary-bg flex items-center gap-3"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="text-sm text-primary-text">
+                Reading your bookmarks… {organizer.done} of {organizer.total}
+              </span>
+              <Button type="button" intent="secondary" size="sm" onClick={organizer.stop}>
+                Stop
+              </Button>
+            </div>
+          )}
+
           {/* #54: Only for a real multi-selection — a single click is served by the form. */}
           {multiSelectedBookmarkIds.length > 0 && (
             <BulkEditBar
@@ -849,6 +913,14 @@ const BookmarkApp = () => {
             onConfirm={handleConfirmDelete}
             onCancel={handleCancelDelete}
             isLoading={isDeleting}
+          />
+        )}
+        {proposedChanges.length > 0 && (
+          <OrganizeReviewModal
+            rows={proposedChanges}
+            onApply={handleApplyOrganize}
+            onCancel={() => setProposedChanges([])}
+            isApplying={isApplyingChanges}
           />
         )}
       </ErrorBoundary>
