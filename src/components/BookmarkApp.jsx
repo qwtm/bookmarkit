@@ -27,7 +27,7 @@ import { isSafeHttpUrl } from "../utils/url.js";
 import { parseNetscapeHtml } from "../utils/netscapeBookmarks.js";
 import { remoteFaviconsEnabled, setRemoteFaviconsEnabled } from "../utils/favicon.js";
 import { useAgentEngine } from "../hooks/useAgentEngine.js";
-import { useBookmarkSelection } from "../hooks/useBookmarkSelection.js";
+import { useBookmarkSelection, keepsSelectionProps } from "../hooks/useBookmarkSelection.js";
 import { useBookmarkStore } from "../hooks/useBookmarkStore.js";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts.js";
 import { useLinkSweep } from "../hooks/useLinkSweep.js";
@@ -267,10 +267,18 @@ const BookmarkApp = () => {
   // #102: what a lookup would actually ask about — the dead links in the selection
   // if there is one, otherwise the dead links on screen. Nothing offers to contact
   // the archive when there is nothing to ask about.
-  const deadLinksInReach = useMemo(
-    () => recoverable(selectedIds.length > 0 ? selectedBookmarks : displayedBookmarks).length,
-    [displayedBookmarks, selectedBookmarks, selectedIds]
+  // The archive question is asked about a selection when there is one, and one
+  // click on a bookmark is a selection — so this follows selectedIds rather than
+  // the multi-select list the bulk-edit bar works from.
+  const bookmarksInReach = useMemo(
+    () =>
+      selectedIds.length > 0
+        ? bookmarks.filter((b) => selectedIds.includes(b.id))
+        : displayedBookmarks,
+    [bookmarks, displayedBookmarks, selectedIds]
   );
+
+  const deadLinksInReach = useMemo(() => recoverable(bookmarksInReach).length, [bookmarksInReach]);
 
   // #49: A view is "active" when the screen matches it, rather than because it was
   // the last one clicked — editing a filter afterwards should visibly leave it.
@@ -507,9 +515,9 @@ const BookmarkApp = () => {
   // fix. Asking the archive is a separate, asked-for step, and it proposes rather
   // than writes: the same review and the same one-undo write as a tidy-up.
   const handleRecoverDeadLinks = useCallback(async () => {
-    const rows = await archive.run(selectedIds.length > 0 ? selectedBookmarks : displayedBookmarks);
+    const rows = await archive.run(bookmarksInReach);
     if (rows.length > 0) setReview({ title: "Review the archived copies", rows });
-  }, [archive, displayedBookmarks, selectedBookmarks, selectedIds]);
+  }, [archive, bookmarksInReach]);
 
   const handleApplyReviewed = useCallback(
     async (acceptedIds) => {
@@ -973,6 +981,9 @@ const BookmarkApp = () => {
                   intent="secondary"
                   onClick={archive.running ? archive.stop : handleRecoverDeadLinks}
                   title="Ask the Internet Archive for a saved copy of each dead link"
+                  // Without this the pointer-down clears the selection the button
+                  // is about, and the lookup silently widens to the whole view.
+                  {...keepsSelectionProps}
                 >
                   {archive.running
                     ? `Stop (${archive.done}/${archive.total})`
