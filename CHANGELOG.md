@@ -1,5 +1,13 @@
 # bookmarkit
 
+## 0.2.1
+
+### Patch Changes
+
+- f7858f1: The extension toolbar and chrome://extensions listing now show the bookmarkit
+  emblem instead of the placeholder icons. The same assets are registered at the
+  manifest top level so packaging and the extensions page pick them up.
+
 ## 0.2.0
 
 ### Minor Changes
