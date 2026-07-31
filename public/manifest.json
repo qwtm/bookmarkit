@@ -3,6 +3,11 @@
   "name": "bookmarkit extension",
   "version": "0.2.0",
   "description": "A Chrome extension built with Vite and React.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
