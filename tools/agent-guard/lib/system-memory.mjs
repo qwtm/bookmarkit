@@ -17,9 +17,9 @@
 // Parsers are pure and exported so the platform arithmetic is testable without
 // a machine in the required state; only `readMemoryStatus` touches the system.
 
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import os from 'node:os';
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import os from "node:os";
 
 const MB = 1024 * 1024;
 
@@ -41,14 +41,14 @@ export function parseVmStat(output) {
   const pageSizeMatch = /page size of (\d+) bytes/u.exec(output);
   const pageSize = pageSizeMatch ? Number(pageSizeMatch[1]) : 4096;
   const pages = (label) => {
-    const match = new RegExp(`^${label}:\\s+(\\d+)\\.?\\s*$`, 'mu').exec(output);
+    const match = new RegExp(`^${label}:\\s+(\\d+)\\.?\\s*$`, "mu").exec(output);
     return match ? Number(match[1]) : 0;
   };
-  const free = pages('Pages free');
-  const speculative = pages('Pages speculative');
-  const inactive = pages('Pages inactive');
-  const purgeable = pages('Pages purgeable');
-  const compressed = pages('Pages occupying compressor');
+  const free = pages("Pages free");
+  const speculative = pages("Pages speculative");
+  const inactive = pages("Pages inactive");
+  const purgeable = pages("Pages purgeable");
+  const compressed = pages("Pages occupying compressor");
   return {
     pageSize,
     availableMb: toMb((free + speculative + inactive + purgeable) * pageSize),
@@ -59,32 +59,32 @@ export function parseVmStat(output) {
 /** `sysctl vm.swapusage` → `total = 7168.00M  used = 6090.00M  free = 1078.00M`. */
 export function parseSwapusage(output) {
   const field = (name) => {
-    const match = new RegExp(`${name}\\s*=\\s*([\\d.]+)([KMG])`, 'u').exec(output);
+    const match = new RegExp(`${name}\\s*=\\s*([\\d.]+)([KMG])`, "u").exec(output);
     if (!match) return 0;
     const value = Number(match[1]);
-    const scale = match[2] === 'G' ? 1024 : match[2] === 'K' ? 1 / 1024 : 1;
+    const scale = match[2] === "G" ? 1024 : match[2] === "K" ? 1 / 1024 : 1;
     return Math.round(value * scale);
   };
-  return { swapTotalMb: field('total'), swapUsedMb: field('used') };
+  return { swapTotalMb: field("total"), swapUsedMb: field("used") };
 }
 
 /** `/proc/meminfo` on Linux. `MemAvailable` is the kernel's own estimate. */
 export function parseMeminfo(output) {
   const kb = (label) => {
-    const match = new RegExp(`^${label}:\\s+(\\d+) kB`, 'mu').exec(output);
+    const match = new RegExp(`^${label}:\\s+(\\d+) kB`, "mu").exec(output);
     return match ? Number(match[1]) : 0;
   };
-  const swapTotalKb = kb('SwapTotal');
-  const swapFreeKb = kb('SwapFree');
+  const swapTotalKb = kb("SwapTotal");
+  const swapFreeKb = kb("SwapFree");
   return {
-    availableMb: Math.round(kb('MemAvailable') / 1024),
+    availableMb: Math.round(kb("MemAvailable") / 1024),
     swapTotalMb: Math.round(swapTotalKb / 1024),
     swapUsedMb: Math.round((swapTotalKb - swapFreeKb) / 1024),
   };
 }
 
 function run(command, args) {
-  return execFileSync(command, args, { encoding: 'utf8', timeout: 5000, maxBuffer: 4 * MB });
+  return execFileSync(command, args, { encoding: "utf8", timeout: 5000, maxBuffer: 4 * MB });
 }
 
 /**
@@ -96,16 +96,39 @@ function run(command, args) {
  * fallback reading is marked and the admission logic treats it as
  * unverified rather than as good news.
  */
-export function readMemoryStatus({ platform = process.platform, totalMb = toMb(os.totalmem()), exec = run, readFile = readFileSync } = {}) {
+export function readMemoryStatus({
+  platform = process.platform,
+  totalMb = toMb(os.totalmem()),
+  exec = run,
+  readFile = readFileSync,
+} = {}) {
   try {
-    if (platform === 'darwin') {
-      const { availableMb, compressedMb } = parseVmStat(exec('vm_stat', []));
-      const { swapTotalMb, swapUsedMb } = parseSwapusage(exec('sysctl', ['vm.swapusage']));
-      return { totalMb, availableMb, compressedMb, swapTotalMb, swapUsedMb, source: 'vm_stat+sysctl', degraded: false };
+    if (platform === "darwin") {
+      const { availableMb, compressedMb } = parseVmStat(exec("vm_stat", []));
+      const { swapTotalMb, swapUsedMb } = parseSwapusage(exec("sysctl", ["vm.swapusage"]));
+      return {
+        totalMb,
+        availableMb,
+        compressedMb,
+        swapTotalMb,
+        swapUsedMb,
+        source: "vm_stat+sysctl",
+        degraded: false,
+      };
     }
-    if (platform === 'linux') {
-      const { availableMb, swapTotalMb, swapUsedMb } = parseMeminfo(readFile('/proc/meminfo', 'utf8'));
-      return { totalMb, availableMb, compressedMb: 0, swapTotalMb, swapUsedMb, source: '/proc/meminfo', degraded: false };
+    if (platform === "linux") {
+      const { availableMb, swapTotalMb, swapUsedMb } = parseMeminfo(
+        readFile("/proc/meminfo", "utf8")
+      );
+      return {
+        totalMb,
+        availableMb,
+        compressedMb: 0,
+        swapTotalMb,
+        swapUsedMb,
+        source: "/proc/meminfo",
+        degraded: false,
+      };
     }
   } catch {
     // Fall through to the degraded reading below.
@@ -116,7 +139,7 @@ export function readMemoryStatus({ platform = process.platform, totalMb = toMb(o
     compressedMb: 0,
     swapTotalMb: 0,
     swapUsedMb: 0,
-    source: 'os.freemem',
+    source: "os.freemem",
     degraded: true,
   };
 }
@@ -127,11 +150,14 @@ export function readMemoryStatus({ platform = process.platform, totalMb = toMb(o
  */
 export function topConsumers(limit = 5, exec = run) {
   try {
-    const rows = exec('ps', ['-axo', 'rss=,comm='])
-      .split('\n')
+    const rows = exec("ps", ["-axo", "rss=,comm="])
+      .split("\n")
       .map((line) => /^\s*(\d+)\s+(.*)$/u.exec(line.trimEnd()))
       .filter(Boolean)
-      .map((match) => ({ rssMb: Math.round(Number(match[1]) / 1024), name: match[2].split('/').pop() }));
+      .map((match) => ({
+        rssMb: Math.round(Number(match[1]) / 1024),
+        name: match[2].split("/").pop(),
+      }));
     const byName = new Map();
     for (const { rssMb, name } of rows) byName.set(name, (byName.get(name) ?? 0) + rssMb);
     return [...byName]

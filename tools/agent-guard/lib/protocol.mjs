@@ -14,16 +14,16 @@
 // over-subscription this tool exists to prevent. Only the core fields below may
 // ever change meaning; anything else is additive.
 
-import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
-import path from 'node:path';
+import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
 
 export const PROTOCOL_VERSION = 1;
 
 // Core lease fields. Stable forever — a newer copy may add fields, never
 // repurpose these, because older copies budget against them.
-export const CORE_LEASE_FIELDS = ['id', 'pid', 'estimatedMb', 'grantedAt'];
+export const CORE_LEASE_FIELDS = ["id", "pid", "estimatedMb", "grantedAt"];
 
 /**
  * The per-machine, per-user state directory.
@@ -41,22 +41,26 @@ export const CORE_LEASE_FIELDS = ['id', 'pid', 'estimatedMb', 'grantedAt'];
  * point at a scratch directory without touching the real one.
  */
 export function stateDir(env = process.env) {
-  const explicit = typeof env.AGENT_GUARD_STATE_DIR === 'string' ? env.AGENT_GUARD_STATE_DIR.trim() : '';
+  const explicit =
+    typeof env.AGENT_GUARD_STATE_DIR === "string" ? env.AGENT_GUARD_STATE_DIR.trim() : "";
   if (explicit) return explicit;
-  const runtime = typeof env.XDG_RUNTIME_DIR === 'string' ? env.XDG_RUNTIME_DIR.trim() : '';
-  if (runtime) return path.join(runtime, 'agent-guard');
+  const runtime = typeof env.XDG_RUNTIME_DIR === "string" ? env.XDG_RUNTIME_DIR.trim() : "";
+  if (runtime) return path.join(runtime, "agent-guard");
   const home = env.HOME || homedir();
-  if (process.platform === 'darwin') return path.join(home, 'Library', 'Caches', 'agent-guard');
-  const cache = typeof env.XDG_CACHE_HOME === 'string' && env.XDG_CACHE_HOME.trim() ? env.XDG_CACHE_HOME.trim() : path.join(home, '.cache');
-  return path.join(cache, 'agent-guard');
+  if (process.platform === "darwin") return path.join(home, "Library", "Caches", "agent-guard");
+  const cache =
+    typeof env.XDG_CACHE_HOME === "string" && env.XDG_CACHE_HOME.trim()
+      ? env.XDG_CACHE_HOME.trim()
+      : path.join(home, ".cache");
+  return path.join(cache, "agent-guard");
 }
 
 export function leasesDir(env = process.env) {
-  return path.join(stateDir(env), 'leases');
+  return path.join(stateDir(env), "leases");
 }
 
 export function grantsDir(env = process.env) {
-  return path.join(stateDir(env), 'grants');
+  return path.join(stateDir(env), "grants");
 }
 
 /**
@@ -72,17 +76,17 @@ export function grantsDir(env = process.env) {
  * are discarded on sight rather than trusted or, worse, made unreclaimable.
  */
 export function machineToken(env = process.env) {
-  const file = path.join(stateDir(env), 'machine-token');
+  const file = path.join(stateDir(env), "machine-token");
   try {
-    const token = readFileSync(file, 'utf8').trim();
+    const token = readFileSync(file, "utf8").trim();
     if (token) return token;
   } catch {
     // Missing or unreadable: mint below.
   }
-  const minted = randomBytes(16).toString('hex');
+  const minted = randomBytes(16).toString("hex");
   try {
     mkdirSync(stateDir(env), { recursive: true });
-    writeFileSync(file, `${minted}\n`, { flag: 'wx' });
+    writeFileSync(file, `${minted}\n`, { flag: "wx" });
     return minted;
   } catch {
     // Lost the race with a concurrent run, or the directory is read-only.
@@ -90,7 +94,7 @@ export function machineToken(env = process.env) {
     // state directory degrades to a per-process token, which reaps every
     // foreign lease and is reported by `arbiter.mjs doctor`.
     try {
-      const token = readFileSync(file, 'utf8').trim();
+      const token = readFileSync(file, "utf8").trim();
       if (token) return token;
     } catch {
       // Fall through.

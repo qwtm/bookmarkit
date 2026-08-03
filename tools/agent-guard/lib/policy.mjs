@@ -11,10 +11,10 @@
 //   3. Is there a grant? → the owner can hand an agent one heavy lane, briefly,
 //                         out of band.
 
-import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
+import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
-import { ensureStateDirs, grantsDir } from './protocol.mjs';
+import { ensureStateDirs, grantsDir } from "./protocol.mjs";
 
 /**
  * CI detection. Broad on purpose — a false positive costs a hosted runner
@@ -22,13 +22,13 @@ import { ensureStateDirs, grantsDir } from './protocol.mjs';
  */
 export function isCi(env = process.env) {
   return (
-    env.CI === 'true' ||
-    env.CI === '1' ||
-    env.GITHUB_ACTIONS === 'true' ||
-    env.CONTINUOUS_INTEGRATION === 'true' ||
-    typeof env.BUILDKITE === 'string' ||
-    typeof env.GITLAB_CI === 'string' ||
-    typeof env.JENKINS_URL === 'string'
+    env.CI === "true" ||
+    env.CI === "1" ||
+    env.GITHUB_ACTIONS === "true" ||
+    env.CONTINUOUS_INTEGRATION === "true" ||
+    typeof env.BUILDKITE === "string" ||
+    typeof env.GITLAB_CI === "string" ||
+    typeof env.JENKINS_URL === "string"
   );
 }
 
@@ -48,23 +48,28 @@ export function isCi(env = process.env) {
  * plain terminal satisfies for free.
  */
 export function isAgentSession(env = process.env) {
-  if (env.AGENT_GUARD_ASSUME_HUMAN === '1') return false;
-  const aiAgent = typeof env.AI_AGENT === 'string' ? env.AI_AGENT.toLowerCase() : '';
+  if (env.AGENT_GUARD_ASSUME_HUMAN === "1") return false;
+  const aiAgent = typeof env.AI_AGENT === "string" ? env.AI_AGENT.toLowerCase() : "";
   return (
-    env.CLAUDECODE === '1' ||
-    (typeof env.CLAUDE_CODE_ENTRYPOINT === 'string' && env.CLAUDE_CODE_ENTRYPOINT !== '') ||
-    Object.keys(env).some((key) => key.startsWith('CODEX_')) ||
-    Object.keys(env).some((key) => key.startsWith('CURSOR_')) ||
-    aiAgent !== ''
+    env.CLAUDECODE === "1" ||
+    (typeof env.CLAUDE_CODE_ENTRYPOINT === "string" && env.CLAUDE_CODE_ENTRYPOINT !== "") ||
+    Object.keys(env).some((key) => key.startsWith("CODEX_")) ||
+    Object.keys(env).some((key) => key.startsWith("CURSOR_")) ||
+    aiAgent !== ""
   );
 }
 
 export function harnessName(env = process.env) {
-  if (env.CLAUDECODE === '1' || (typeof env.CLAUDE_CODE_ENTRYPOINT === 'string' && env.CLAUDE_CODE_ENTRYPOINT !== '')) return 'claude';
-  if (Object.keys(env).some((key) => key.startsWith('CODEX_'))) return 'codex';
-  if (Object.keys(env).some((key) => key.startsWith('CURSOR_'))) return 'cursor';
-  if (typeof env.AI_AGENT === 'string' && env.AI_AGENT !== '') return env.AI_AGENT.toLowerCase().split(/[^a-z]/u)[0] || 'agent';
-  return 'human';
+  if (
+    env.CLAUDECODE === "1" ||
+    (typeof env.CLAUDE_CODE_ENTRYPOINT === "string" && env.CLAUDE_CODE_ENTRYPOINT !== "")
+  )
+    return "claude";
+  if (Object.keys(env).some((key) => key.startsWith("CODEX_"))) return "codex";
+  if (Object.keys(env).some((key) => key.startsWith("CURSOR_"))) return "cursor";
+  if (typeof env.AI_AGENT === "string" && env.AI_AGENT !== "")
+    return env.AI_AGENT.toLowerCase().split(/[^a-z]/u)[0] || "agent";
+  return "human";
 }
 
 /**
@@ -75,15 +80,35 @@ export function harnessName(env = process.env) {
  * both the wrapper and the pre-execution hook.
  */
 export const HEAVY_LANES = [
-  { id: 'e2e', pattern: /\be2e\b|\bplaywright\b/u, why: 'every Playwright worker boots a full Electron app' },
-  { id: 'stories', pattern: /\bstories\b|\bstorybook\b|\btest-storybook\b/u, why: 'the Storybook build plus a browser-driven test run' },
-  { id: 'perf', pattern: /\bperf\b|\bbenchmark\b/u, why: 'the perf harness seeds a large synthetic library' },
-  { id: 'coverage', pattern: /\bcov\b|\bcoverage\b|(^|[\s;(&|])(npx\s+)?c8\s/u, why: 'coverage instrumentation runs the whole suite with extra retention' },
-  { id: 'full-ci', pattern: /(^|[\s;(&|])npm\s+run\s+ci(?![\w:-])|^ci$/u, why: 'the full gate chains lint, typecheck, the suites and a build' },
+  {
+    id: "e2e",
+    pattern: /\be2e\b|\bplaywright\b/u,
+    why: "every Playwright worker boots a full Electron app",
+  },
+  {
+    id: "stories",
+    pattern: /\bstories\b|\bstorybook\b|\btest-storybook\b/u,
+    why: "the Storybook build plus a browser-driven test run",
+  },
+  {
+    id: "perf",
+    pattern: /\bperf\b|\bbenchmark\b/u,
+    why: "the perf harness seeds a large synthetic library",
+  },
+  {
+    id: "coverage",
+    pattern: /\bcov\b|\bcoverage\b|(^|[\s;(&|])(npx\s+)?c8\s/u,
+    why: "coverage instrumentation runs the whole suite with extra retention",
+  },
+  {
+    id: "full-ci",
+    pattern: /(^|[\s;(&|])npm\s+run\s+ci(?![\w:-])|^ci$/u,
+    why: "the full gate chains lint, typecheck, the suites and a build",
+  },
 ];
 
 export function classifyLane(text) {
-  if (typeof text !== 'string' || text === '') return null;
+  if (typeof text !== "string" || text === "") return null;
   return HEAVY_LANES.find((lane) => lane.pattern.test(text)) ?? null;
 }
 
@@ -115,11 +140,11 @@ export function writeGrant({ laneId, minutes = 30, env = process.env, now = Date
 export function readGrant(laneId, env = process.env, now = Date.now()) {
   let grant;
   try {
-    grant = JSON.parse(readFileSync(grantPath(laneId, env), 'utf8'));
+    grant = JSON.parse(readFileSync(grantPath(laneId, env), "utf8"));
   } catch {
     return null;
   }
-  const expires = Date.parse(grant?.expiresAt ?? '');
+  const expires = Date.parse(grant?.expiresAt ?? "");
   if (!Number.isFinite(expires) || expires <= now) {
     try {
       rmSync(grantPath(laneId, env), { force: true });
@@ -134,8 +159,8 @@ export function readGrant(laneId, env = process.env, now = Date.now()) {
 export function listGrants(env = process.env, now = Date.now()) {
   try {
     return readdirSync(grantsDir(env))
-      .filter((name) => name.endsWith('.json'))
-      .map((name) => readGrant(name.replace(/\.json$/u, ''), env, now))
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => readGrant(name.replace(/\.json$/u, ""), env, now))
       .filter(Boolean);
   } catch {
     return [];
@@ -162,16 +187,16 @@ export function revokeGrant(laneId, env = process.env) {
 export function evaluateLanePolicy({ label, command, env = process.env, now = Date.now() }) {
   const lane = classifyLane(label) ?? classifyLane(command);
   if (!lane) return { allowed: true, lane: null };
-  if (!isAgentSession(env)) return { allowed: true, lane, actor: 'human' };
+  if (!isAgentSession(env)) return { allowed: true, lane, actor: "human" };
   const grant = readGrant(lane.id, env, now);
-  if (grant) return { allowed: true, lane, actor: 'agent', grant };
+  if (grant) return { allowed: true, lane, actor: "agent", grant };
   return {
     allowed: false,
     lane,
-    actor: 'agent',
+    actor: "agent",
     message:
       `The "${lane.id}" lane is a heavy local suite (${lane.why}) and agents do not run it on this machine by default. ` +
-      'Push the branch and let GitHub CI verify — CI is the authoritative lane, and it is exempt from this guard. ' +
+      "Push the branch and let GitHub CI verify — CI is the authoritative lane, and it is exempt from this guard. " +
       `If a local run is genuinely required, ask the owner to run: node tools/agent-guard/arbiter.mjs grant ${lane.id} --minutes 30`,
   };
 }
