@@ -17,26 +17,11 @@
 // permanently unreclaimable, so the crash-recovery path became the outage. A
 // force-quit agent here costs the machine nothing beyond the next reap.
 
-import { randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import path from "node:path";
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
-import {
-  CORE_LEASE_FIELDS,
-  PROTOCOL_VERSION,
-  ensureStateDirs,
-  leasesDir,
-  machineToken,
-  stateDir,
-} from "./protocol.mjs";
+import { CORE_LEASE_FIELDS, PROTOCOL_VERSION, ensureStateDirs, leasesDir, machineToken, stateDir } from './protocol.mjs';
 
 export function isProcessAlive(pid) {
   try {
@@ -44,7 +29,7 @@ export function isProcessAlive(pid) {
     return true;
   } catch (error) {
     // EPERM means the process exists but belongs to another user — alive.
-    return error.code === "EPERM";
+    return error.code === 'EPERM';
   }
 }
 
@@ -55,7 +40,7 @@ function parseLease(raw) {
   } catch {
     return null;
   }
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   // Core fields only: a lease written by a newer copy of this tool must still
   // count against the budget, or a mixed-version fleet silently oversubscribes.
   for (const field of CORE_LEASE_FIELDS) {
@@ -78,7 +63,7 @@ export function readLeases(env = process.env, { reap = true } = {}) {
   const token = machineToken(env);
   let entries;
   try {
-    entries = readdirSync(dir).filter((name) => name.endsWith(".json"));
+    entries = readdirSync(dir).filter((name) => name.endsWith('.json'));
   } catch {
     return [];
   }
@@ -87,16 +72,13 @@ export function readLeases(env = process.env, { reap = true } = {}) {
     const file = path.join(dir, name);
     let lease;
     try {
-      lease = parseLease(readFileSync(file, "utf8"));
+      lease = parseLease(readFileSync(file, 'utf8'));
     } catch {
       lease = null;
     }
     // Unparseable, foreign (a restored or copied state directory — see
     // machineToken), or dead: none of these may hold budget.
-    const stale =
-      lease === null ||
-      (lease.machineToken !== undefined && lease.machineToken !== token) ||
-      !isProcessAlive(lease.pid);
+    const stale = lease === null || (lease.machineToken !== undefined && lease.machineToken !== token) || !isProcessAlive(lease.pid);
     if (stale) {
       if (reap) {
         try {
@@ -120,16 +102,7 @@ function writeLeaseFile(file, lease) {
   renameSync(temp, file);
 }
 
-export function acquireLease({
-  env = process.env,
-  label,
-  estimatedMb,
-  repo,
-  worktree,
-  harness,
-  command,
-  pid = process.pid,
-}) {
+export function acquireLease({ env = process.env, label, estimatedMb, repo, worktree, harness, command, pid = process.pid }) {
   ensureStateDirs(env);
   const lease = {
     protocol: PROTOCOL_VERSION,
@@ -162,12 +135,7 @@ export function acquireLease({
  */
 export function heartbeatLease(lease, observedMb) {
   try {
-    writeLeaseFile(lease.file, {
-      ...lease,
-      file: undefined,
-      observedMb,
-      heartbeatAt: new Date().toISOString(),
-    });
+    writeLeaseFile(lease.file, { ...lease, file: undefined, observedMb, heartbeatAt: new Date().toISOString() });
     return true;
   } catch {
     return false;
@@ -192,7 +160,7 @@ export function releaseLease(lease) {
  * admission instead of passing through.
  */
 export function leaseExists(id, env = process.env) {
-  if (typeof id !== "string" || id === "") return false;
+  if (typeof id !== 'string' || id === '') return false;
   return readLeases(env, { reap: false }).some((lease) => lease.id === id);
 }
 
@@ -212,20 +180,15 @@ const LOCK_STALE_MS = 30_000;
 const LOCK_POLL_MS = 50;
 
 function lockPath(env) {
-  return path.join(stateDir(env), "admission.lock");
+  return path.join(stateDir(env), 'admission.lock');
 }
 
 function breakStaleLock(dir) {
   // A crashed holder must not wedge admission for everyone. Liveness first, and
   // age as the backstop for a holder whose pid was recycled.
   try {
-    const owner = JSON.parse(readFileSync(path.join(dir, "owner.json"), "utf8"));
-    if (
-      Number.isFinite(owner.pid) &&
-      isProcessAlive(owner.pid) &&
-      Date.now() - Date.parse(owner.at) < LOCK_STALE_MS
-    )
-      return false;
+    const owner = JSON.parse(readFileSync(path.join(dir, 'owner.json'), 'utf8'));
+    if (Number.isFinite(owner.pid) && isProcessAlive(owner.pid) && Date.now() - Date.parse(owner.at) < LOCK_STALE_MS) return false;
   } catch {
     // Unreadable owner: judge by directory age below.
     try {
@@ -242,11 +205,7 @@ function breakStaleLock(dir) {
   }
 }
 
-export async function withAdmissionLock(
-  env,
-  fn,
-  { timeoutMs = 15_000, now = () => Date.now() } = {}
-) {
+export async function withAdmissionLock(env, fn, { timeoutMs = 15_000, now = () => Date.now() } = {}) {
   ensureStateDirs(env);
   const dir = lockPath(env);
   const deadline = now() + timeoutMs;
@@ -255,7 +214,7 @@ export async function withAdmissionLock(
       mkdirSync(dir);
       break;
     } catch (error) {
-      if (error.code !== "EEXIST") throw error;
+      if (error.code !== 'EEXIST') throw error;
       breakStaleLock(dir);
       if (now() >= deadline) {
         // Proceeding unserialized is strictly better than refusing a run
@@ -269,10 +228,7 @@ export async function withAdmissionLock(
     }
   }
   try {
-    writeFileSync(
-      path.join(dir, "owner.json"),
-      JSON.stringify({ pid: process.pid, at: new Date().toISOString() })
-    );
+    writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
   } catch {
     // Best-effort provenance; the directory itself is the lock.
   }

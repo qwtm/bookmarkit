@@ -23,23 +23,16 @@
 //        (human escape hatch — the command hook blocks agents from using it),
 //        AGENT_GUARDED=1 (set for children so nested guards pass through).
 
-import { execFile, spawn } from "node:child_process";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import process from "node:process";
+import { execFile, spawn } from 'node:child_process';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import process from 'node:process';
 
-import { clampCeiling, decideAdmission, deriveBudget } from "./lib/budget.mjs";
-import {
-  acquireLease,
-  heartbeatLease,
-  leaseExists,
-  readLeases,
-  releaseLease,
-  withAdmissionLock,
-} from "./lib/leases.mjs";
-import { evaluateLanePolicy, harnessName, isAgentSession, isCi } from "./lib/policy.mjs";
-import { readMemoryStatus, topConsumers } from "./lib/system-memory.mjs";
+import { clampCeiling, decideAdmission, deriveBudget } from './lib/budget.mjs';
+import { acquireLease, heartbeatLease, leaseExists, readLeases, releaseLease, withAdmissionLock } from './lib/leases.mjs';
+import { evaluateLanePolicy, harnessName, isAgentSession, isCi } from './lib/policy.mjs';
+import { readMemoryStatus, topConsumers } from './lib/system-memory.mjs';
 
 const POLL_MS = 250;
 const HEARTBEAT_MS = 3000;
@@ -60,7 +53,7 @@ function fail(message) {
 }
 
 export function parseArgs(argv) {
-  const options = { label: "command", rssMb: null, heapMb: null, timeoutS: null, waitS: null };
+  const options = { label: 'command', rssMb: null, heapMb: null, timeoutS: null, waitS: null };
   let index = 0;
   const takeValue = (flag) => {
     index += 1;
@@ -69,16 +62,16 @@ export function parseArgs(argv) {
   };
   for (; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--") {
+    if (arg === '--') {
       index += 1;
       break;
     }
-    if (arg === "--label") options.label = takeValue(arg);
-    else if (arg === "--rss-mb") options.rssMb = Number(takeValue(arg));
-    else if (arg === "--heap-mb") options.heapMb = Number(takeValue(arg));
-    else if (arg === "--timeout-s") options.timeoutS = Number(takeValue(arg));
-    else if (arg === "--wait-s") options.waitS = Number(takeValue(arg));
-    else if (arg.startsWith("--")) throw new Error(`unknown flag ${arg}`);
+    if (arg === '--label') options.label = takeValue(arg);
+    else if (arg === '--rss-mb') options.rssMb = Number(takeValue(arg));
+    else if (arg === '--heap-mb') options.heapMb = Number(takeValue(arg));
+    else if (arg === '--timeout-s') options.timeoutS = Number(takeValue(arg));
+    else if (arg === '--wait-s') options.waitS = Number(takeValue(arg));
+    else if (arg.startsWith('--')) throw new Error(`unknown flag ${arg}`);
     else break;
   }
   return { options, command: argv.slice(index) };
@@ -87,22 +80,19 @@ export function parseArgs(argv) {
 export function resolveRequest(options, env, budget) {
   const pick = (envName, flagValue, fallback) => {
     const raw = env[envName];
-    const fromEnv = raw === undefined || raw === "" ? NaN : Number(raw);
+    const fromEnv = raw === undefined || raw === '' ? NaN : Number(raw);
     if (!Number.isNaN(fromEnv)) return fromEnv;
     if (flagValue !== null && !Number.isNaN(flagValue)) return flagValue;
     return fallback;
   };
-  const ceiling = clampCeiling(pick("AGENT_GUARD_RSS_MB", options.rssMb, budget.maxRunMb), budget);
+  const ceiling = clampCeiling(pick('AGENT_GUARD_RSS_MB', options.rssMb, budget.maxRunMb), budget);
   return {
     ...ceiling,
     // The per-process V8 heap tracks the tree ceiling rather than a constant:
     // half the tree budget, so one worker cannot single-handedly reach it.
-    heapMb: Math.max(
-      256,
-      Math.round(pick("AGENT_GUARD_HEAP_MB", options.heapMb, Math.floor(ceiling.ceilingMb / 2)))
-    ),
-    timeoutS: pick("AGENT_GUARD_TIMEOUT_S", options.timeoutS, DEFAULT_TIMEOUT_S),
-    waitS: pick("AGENT_GUARD_WAIT_S", options.waitS, isAgentSession(env) ? 0 : 180),
+    heapMb: Math.max(256, Math.round(pick('AGENT_GUARD_HEAP_MB', options.heapMb, Math.floor(ceiling.ceilingMb / 2)))),
+    timeoutS: pick('AGENT_GUARD_TIMEOUT_S', options.timeoutS, DEFAULT_TIMEOUT_S),
+    waitS: pick('AGENT_GUARD_WAIT_S', options.waitS, isAgentSession(env) ? 0 : 180),
   };
 }
 
@@ -110,7 +100,7 @@ export function resolveRequest(options, env, budget) {
 // still in its process group (catches orphans that reparented to launchd/init).
 export function collectTreeRssKb(psOutput, rootPid) {
   const rows = psOutput
-    .split("\n")
+    .split('\n')
     .map((line) => line.trim().split(/\s+/u).map(Number))
     .filter((fields) => fields.length === 4 && fields.every((value) => Number.isFinite(value)));
   const childrenByParent = new Map();
@@ -140,32 +130,26 @@ export function collectTreeRssKb(psOutput, rootPid) {
 }
 
 function passthrough(command) {
-  const child = spawn(command[0], command.slice(1), { stdio: "inherit" });
-  child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
-  child.on("error", (error) => fail(`failed to start command: ${error.message}`));
+  const child = spawn(command[0], command.slice(1), { stdio: 'inherit' });
+  child.on('exit', (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+  child.on('error', (error) => fail(`failed to start command: ${error.message}`));
 }
 
 function describeRefusal(decision, env) {
   const lines = [`admission refused (${decision.reason}): ${decision.message}`];
   const leases = readLeases(env, { reap: false });
   if (leases.length > 0) {
-    lines.push("Guarded runs currently holding budget on this machine:");
+    lines.push('Guarded runs currently holding budget on this machine:');
     for (const lease of leases) {
-      lines.push(
-        `  - ${lease.label ?? "run"} in ${lease.repo ?? "unknown repo"} (${lease.harness ?? "unknown"}, pid ${lease.pid}): ${lease.estimatedMb} MB reserved, ${lease.observedMb ?? 0} MB resident`
-      );
+      lines.push(`  - ${lease.label ?? 'run'} in ${lease.repo ?? 'unknown repo'} (${lease.harness ?? 'unknown'}, pid ${lease.pid}): ${lease.estimatedMb} MB reserved, ${lease.observedMb ?? 0} MB resident`);
     }
   }
   const consumers = topConsumers(5);
   if (consumers.length > 0) {
-    lines.push(
-      `Largest resident processes: ${consumers.map((entry) => `${entry.name} ${entry.rssMb} MB`).join(", ")}`
-    );
+    lines.push(`Largest resident processes: ${consumers.map((entry) => `${entry.name} ${entry.rssMb} MB`).join(', ')}`);
   }
-  lines.push(
-    "CI is exempt from this guard — pushing and letting GitHub verify is always available."
-  );
-  return lines.join("\n[guard] ");
+  lines.push('CI is exempt from this guard — pushing and letting GitHub verify is always available.');
+  return lines.join('\n[guard] ');
 }
 
 function sleep(ms) {
@@ -196,26 +180,18 @@ async function admit({ env, request, budget, leaseFields }) {
       const memory = readMemoryStatus();
       const leases = readLeases(env);
       const decision = decideAdmission({ budget, memory, leases, requestMb: request.ceilingMb });
-      if (!decision.granted && env.AGENT_GUARD_FORCE !== "1") return { decision, memory };
+      if (!decision.granted && env.AGENT_GUARD_FORCE !== '1') return { decision, memory };
       const lease = acquireLease({ env, estimatedMb: request.ceilingMb, ...leaseFields });
       return { decision, memory, lease };
     });
     if (attempt.lease) {
-      if (!attempt.decision.granted)
-        note(
-          `AGENT_GUARD_FORCE=1: proceeding despite ${attempt.decision.reason}. This is the human escape hatch; the machine is not being protected for this run.`
-        );
-      if (attempt.memory.degraded)
-        note(
-          "WARNING: platform memory probes unavailable; availability is an estimate and swap is unknown."
-        );
+      if (!attempt.decision.granted) note(`AGENT_GUARD_FORCE=1: proceeding despite ${attempt.decision.reason}. This is the human escape hatch; the machine is not being protected for this run.`);
+      if (attempt.memory.degraded) note('WARNING: platform memory probes unavailable; availability is an estimate and swap is unknown.');
       return attempt;
     }
     if (Date.now() >= deadline) return { ...attempt, refused: true };
     if (!announced) {
-      note(
-        `waiting for machine memory (${attempt.decision.reason}); up to ${request.waitS}s. Ctrl-C to give up.`
-      );
+      note(`waiting for machine memory (${attempt.decision.reason}); up to ${request.waitS}s. Ctrl-C to give up.`);
       announced = true;
     }
     await sleep(RETRY_MS);
@@ -224,7 +200,7 @@ async function admit({ env, request, budget, leaseFields }) {
 
 async function main() {
   const { options, command } = parseArgs(process.argv.slice(2));
-  if (command.length === 0) fail("no command given");
+  if (command.length === 0) fail('no command given');
 
   // CI is exempt, entirely and deliberately (see lib/policy.mjs).
   if (isCi(process.env)) return passthrough(command);
@@ -234,30 +210,21 @@ async function main() {
   // would skip the lease, the ceiling and the headroom check outright. An
   // unrecognised marker falls through to full admission rather than failing.
   if (leaseExists(process.env.AGENT_GUARDED, process.env)) return passthrough(command);
-  if (process.platform === "win32") {
-    note("WARNING: guard unsupported on win32; running unguarded.");
+  if (process.platform === 'win32') {
+    note('WARNING: guard unsupported on win32; running unguarded.');
     return passthrough(command);
   }
 
-  const commandLine = command.join(" ");
-  const policy = evaluateLanePolicy({
-    label: options.label,
-    command: commandLine,
-    env: process.env,
-  });
+  const commandLine = command.join(' ');
+  const policy = evaluateLanePolicy({ label: options.label, command: commandLine, env: process.env });
   if (!policy.allowed) fail(policy.message);
-  if (policy.grant)
-    note(
-      `running "${policy.lane.id}" under an owner grant that expires ${policy.grant.expiresAt}.`
-    );
+  if (policy.grant) note(`running "${policy.lane.id}" under an owner grant that expires ${policy.grant.expiresAt}.`);
 
   const totalMb = Math.round(os.totalmem() / (1024 * 1024));
   const budget = deriveBudget(totalMb);
   const request = resolveRequest(options, process.env, budget);
   if (request.clamped) {
-    note(
-      `ceiling clamped: requested ${request.requestedMb} MB, machine cap is ${request.ceilingMb} MB (${totalMb} MB total RAM, ${budget.machineBudgetMb} MB machine budget). Tightening is allowed; loosening is not.`
-    );
+    note(`ceiling clamped: requested ${request.requestedMb} MB, machine cap is ${request.ceilingMb} MB (${totalMb} MB total RAM, ${budget.machineBudgetMb} MB machine budget). Tightening is allowed; loosening is not.`);
   }
 
   const worktree = process.cwd();
@@ -275,30 +242,20 @@ async function main() {
   });
   if (refused) fail(describeRefusal(decision, process.env));
 
-  const guardDir = path.join(worktree, ".guard");
+  const guardDir = path.join(worktree, '.guard');
   mkdirSync(guardDir, { recursive: true });
 
-  const nodeOptions = [process.env.NODE_OPTIONS, `--max-old-space-size=${request.heapMb}`]
-    .filter(Boolean)
-    .join(" ");
+  const nodeOptions = [process.env.NODE_OPTIONS, `--max-old-space-size=${request.heapMb}`].filter(Boolean).join(' ');
   const startedAt = Date.now();
   const child = spawn(command[0], command.slice(1), {
-    stdio: "inherit",
+    stdio: 'inherit',
     detached: true, // new process group; kill(-pid) reaches every descendant
     // The marker carries this run's lease id, so a child can prove it is
     // nested inside a real guarded run rather than merely asserting it.
     env: { ...process.env, AGENT_GUARDED: lease.id, NODE_OPTIONS: nodeOptions },
   });
 
-  const state = {
-    peakRssMb: 0,
-    peakProcessCount: 0,
-    reason: null,
-    termAt: null,
-    done: false,
-    polling: false,
-    lastBeat: 0,
-  };
+  const state = { peakRssMb: 0, peakProcessCount: 0, reason: null, termAt: null, done: false, polling: false, lastBeat: 0 };
 
   const killGroup = (signal) => {
     try {
@@ -314,56 +271,46 @@ async function main() {
     state.termAt = Date.now();
     note(
       `${reason}: terminating process group of "${options.label}" ` +
-        `(peak RSS ${state.peakRssMb} MB, ceiling ${request.ceilingMb} MB, ${Math.round((Date.now() - startedAt) / 1000)}s elapsed).`
+        `(peak RSS ${state.peakRssMb} MB, ceiling ${request.ceilingMb} MB, ${Math.round((Date.now() - startedAt) / 1000)}s elapsed).`,
     );
-    killGroup("SIGTERM");
+    killGroup('SIGTERM');
   };
 
   const poll = setInterval(() => {
     if (state.polling) return;
     state.polling = true;
-    execFile(
-      "ps",
-      ["-axo", "pid=,ppid=,pgid=,rss="],
-      { maxBuffer: 16 * 1024 * 1024 },
-      (error, stdout) => {
-        state.polling = false;
-        if (state.done || error) return;
-        const { totalKb, processCount } = collectTreeRssKb(stdout, child.pid);
-        const rssMb = Math.round(totalKb / 1024);
-        state.peakRssMb = Math.max(state.peakRssMb, rssMb);
-        state.peakProcessCount = Math.max(state.peakProcessCount, processCount);
-        // Report real usage so other repos' arbiters stop counting this run's
-        // reservation twice (see lib/budget.mjs unmaterializedMb).
-        if (Date.now() - state.lastBeat > HEARTBEAT_MS) {
-          state.lastBeat = Date.now();
-          heartbeatLease(lease, rssMb);
-        }
-        if (state.termAt !== null) {
-          if (
-            Date.now() - state.termAt > SIGKILL_AFTER_MS ||
-            rssMb > request.ceilingMb * HARD_KILL_FACTOR
-          )
-            killGroup("SIGKILL");
-          return;
-        }
-        if (rssMb > request.ceilingMb) terminate("rss-limit");
-        else if (request.timeoutS > 0 && Date.now() - startedAt > request.timeoutS * 1000)
-          terminate("timeout");
+    execFile('ps', ['-axo', 'pid=,ppid=,pgid=,rss='], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
+      state.polling = false;
+      if (state.done || error) return;
+      const { totalKb, processCount } = collectTreeRssKb(stdout, child.pid);
+      const rssMb = Math.round(totalKb / 1024);
+      state.peakRssMb = Math.max(state.peakRssMb, rssMb);
+      state.peakProcessCount = Math.max(state.peakProcessCount, processCount);
+      // Report real usage so other repos' arbiters stop counting this run's
+      // reservation twice (see lib/budget.mjs unmaterializedMb).
+      if (Date.now() - state.lastBeat > HEARTBEAT_MS) {
+        state.lastBeat = Date.now();
+        heartbeatLease(lease, rssMb);
       }
-    );
+      if (state.termAt !== null) {
+        if (Date.now() - state.termAt > SIGKILL_AFTER_MS || rssMb > request.ceilingMb * HARD_KILL_FACTOR) killGroup('SIGKILL');
+        return;
+      }
+      if (rssMb > request.ceilingMb) terminate('rss-limit');
+      else if (request.timeoutS > 0 && Date.now() - startedAt > request.timeoutS * 1000) terminate('timeout');
+    });
   }, POLL_MS);
 
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.on(signal, () => {
       terminate(`signal:${signal}`);
     });
   }
 
-  child.on("exit", (code, signal) => {
+  child.on('exit', (code, signal) => {
     state.done = true;
     clearInterval(poll);
-    killGroup("SIGKILL"); // sweep any stragglers left in the group
+    killGroup('SIGKILL'); // sweep any stragglers left in the group
     releaseLease(lease);
     const record = {
       label: options.label,
@@ -377,22 +324,14 @@ async function main() {
       clamped: request.clamped,
       heapMb: request.heapMb,
       timeoutS: request.timeoutS,
-      machine: {
-        totalMb,
-        budget,
-        admittedWith: {
-          availableMb: memory.availableMb,
-          swapUsedMb: memory.swapUsedMb,
-          outstandingMb: decision.outstandingMb,
-        },
-      },
+      machine: { totalMb, budget, admittedWith: { availableMb: memory.availableMb, swapUsedMb: memory.swapUsedMb, outstandingMb: decision.outstandingMb } },
       exitCode: code,
       signal,
-      terminationReason: state.reason ?? "completed",
+      terminationReason: state.reason ?? 'completed',
     };
     try {
-      writeFileSync(path.join(guardDir, "last-run.json"), `${JSON.stringify(record, null, 2)}\n`);
-      appendFileSync(path.join(guardDir, "history.jsonl"), `${JSON.stringify(record)}\n`);
+      writeFileSync(path.join(guardDir, 'last-run.json'), `${JSON.stringify(record, null, 2)}\n`);
+      appendFileSync(path.join(guardDir, 'history.jsonl'), `${JSON.stringify(record)}\n`);
     } catch {
       // Diagnostics are best-effort.
     }
@@ -403,7 +342,7 @@ async function main() {
     process.exit(code ?? (signal ? 1 : 0));
   });
 
-  child.on("error", (error) => {
+  child.on('error', (error) => {
     clearInterval(poll);
     releaseLease(lease);
     fail(`failed to start command: ${error.message}`);

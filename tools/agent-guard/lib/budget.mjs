@@ -51,8 +51,7 @@ export function deriveBudget(totalMb) {
  * nothing gets the cap.
  */
 export function clampCeiling(requestedMb, budget) {
-  const requested =
-    Number.isFinite(requestedMb) && requestedMb > 0 ? Math.round(requestedMb) : budget.maxRunMb;
+  const requested = Number.isFinite(requestedMb) && requestedMb > 0 ? Math.round(requestedMb) : budget.maxRunMb;
   return {
     ceilingMb: Math.max(256, Math.min(requested, budget.maxRunMb)),
     clamped: requested > budget.maxRunMb,
@@ -70,10 +69,7 @@ export function clampCeiling(requestedMb, budget) {
  * precisely so this number shrinks as a run warms up.
  */
 export function unmaterializedMb(leases) {
-  return leases.reduce(
-    (total, lease) => total + Math.max(0, lease.estimatedMb - (lease.observedMb ?? 0)),
-    0
-  );
+  return leases.reduce((total, lease) => total + Math.max(0, lease.estimatedMb - (lease.observedMb ?? 0)), 0);
 }
 
 export function outstandingMb(leases) {
@@ -103,17 +99,13 @@ export function decideAdmission({ budget, memory, leases = [], requestMb }) {
     budget,
   };
 
-  if (
-    memory.swapTotalMb > 0 &&
-    swapUsedRatio >= SWAP_REFUSE_RATIO &&
-    requestMb > budget.lightRunMb
-  ) {
+  if (memory.swapTotalMb > 0 && swapUsedRatio >= SWAP_REFUSE_RATIO && requestMb > budget.lightRunMb) {
     return {
       granted: false,
-      reason: "swap-pressure",
+      reason: 'swap-pressure',
       message:
         `swap is ${Math.round(swapUsedRatio * 100)}% committed (${memory.swapUsedMb} MB of ${memory.swapTotalMb} MB). ` +
-        "The machine is already trading pages for progress; starting another memory-heavy run is what turns that into a freeze. " +
+        'The machine is already trading pages for progress; starting another memory-heavy run is what turns that into a freeze. ' +
         `Runs reserving up to ${budget.lightRunMb} MB are still admitted.`,
       ...arithmetic,
     };
@@ -122,7 +114,7 @@ export function decideAdmission({ budget, memory, leases = [], requestMb }) {
   if (projectedFreeMb < budget.availabilityFloorMb) {
     return {
       granted: false,
-      reason: "insufficient-headroom",
+      reason: 'insufficient-headroom',
       message:
         `only ${memory.availableMb} MB is available and ${unmaterialized} MB is already promised to ${leases.length} running ` +
         `guarded run(s); admitting ${requestMb} MB would leave ${projectedFreeMb} MB against a ${budget.availabilityFloorMb} MB floor.`,
@@ -133,7 +125,7 @@ export function decideAdmission({ budget, memory, leases = [], requestMb }) {
   if (outstanding + requestMb > budget.machineBudgetMb) {
     return {
       granted: false,
-      reason: "machine-budget",
+      reason: 'machine-budget',
       message:
         `${outstanding} MB of the ${budget.machineBudgetMb} MB machine budget is already leased; ` +
         `${requestMb} MB more would oversubscribe it. This budget is shared by every repo, worktree and agent on this machine.`,
@@ -141,5 +133,5 @@ export function decideAdmission({ budget, memory, leases = [], requestMb }) {
     };
   }
 
-  return { granted: true, reason: "granted", message: null, ...arithmetic };
+  return { granted: true, reason: 'granted', message: null, ...arithmetic };
 }

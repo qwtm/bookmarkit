@@ -27,73 +27,73 @@
 //
 // Protocols: --protocol=claude | cursor | codex
 
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
-import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { existsSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
-import { HEAVY_LANES, readGrant } from "./lib/policy.mjs";
+import { HEAVY_LANES, readGrant } from './lib/policy.mjs';
 
 // Two different blocks need two different next steps, and a refusal whose
 // advice does not fit is one an agent argues with instead of following.
 const GUIDANCE =
-  "Push the branch and let GitHub CI verify — CI is the authoritative lane and is exempt from this guard. " +
-  "See docs/reference/agent-memory-guard.md.";
+  'Push the branch and let GitHub CI verify — CI is the authoritative lane and is exempt from this guard. ' +
+  'See docs/reference/agent-memory-guard.md.';
 
 // A direct binary is not necessarily a heavy run — in a tooling repo `node
 // --test` is the light, normal path. What is wrong with it is that it skips
 // the wrapper, so the fix is the repo's own guarded entrypoint, not CI.
 const USE_ENTRYPOINT =
   "Use the repository's npm test entrypoints instead (`npm test`, `npm run test:*`); they wrap " +
-  "tools/agent-guard/run-guarded.mjs, which derives a ceiling from this machine and checks the machine-wide " +
-  "memory budget first. See docs/reference/agent-memory-guard.md.";
+  'tools/agent-guard/run-guarded.mjs, which derives a ceiling from this machine and checks the machine-wide ' +
+  'memory budget first. See docs/reference/agent-memory-guard.md.';
 
 // Markers that identify a checkout governed by this policy. The second is the
 // pre-rollout location, so a repo mid-migration is still policed.
-const GUARD_MARKERS = ["tools/agent-guard/run-guarded.mjs", "scripts/run-guarded.mjs"];
+const GUARD_MARKERS = ['tools/agent-guard/run-guarded.mjs', 'scripts/run-guarded.mjs'];
 
 const BLOCKED = [
   {
     // Electron-hosted node:test (image-trail's original incident path).
     pattern: /\belectron\b[^\n;&|]*\s--test(?![\w-])/u,
-    what: "direct `electron --test` invocation",
+    what: 'direct `electron --test` invocation',
   },
   {
     pattern: /\bnode\b[^\n;&|]*\s--test(?![\w-])/u,
-    what: "direct `node --test` invocation",
+    what: 'direct `node --test` invocation',
   },
   {
     pattern: /\bnode\b[^\n;&|]*\.test-dist(-dom)?\b/u,
-    what: "direct execution of compiled tests in .test-dist(-dom)",
+    what: 'direct execution of compiled tests in .test-dist(-dom)',
   },
   {
     pattern: /\bplaywright\s+test\b/u,
-    what: "direct Playwright invocation",
+    what: 'direct Playwright invocation',
   },
   {
     pattern: /\btest-storybook\b/u,
-    what: "direct Storybook test-runner invocation",
+    what: 'direct Storybook test-runner invocation',
   },
   {
     pattern: /(^|[\s;(&|])(npx\s+)?vitest(?:\s|$)/u,
-    what: "direct Vitest invocation",
+    what: 'direct Vitest invocation',
   },
   {
     pattern: /(^|[\s;(&|])(npx\s+)?c8\s/u,
-    what: "direct c8 coverage invocation",
+    what: 'direct c8 coverage invocation',
   },
   {
     // Inner/unguarded npm scripts (test:dom:run, *:inner).
     pattern: /\bnpm\s+run\s+[\w:.-]*:(run|inner)(?![\w:-])/u,
-    what: "unguarded inner npm script",
+    what: 'unguarded inner npm script',
   },
   {
     // Headed/interactive runs open GUI windows on the shared desktop.
     pattern: /\bnpm\s+run\s+test:e2e:(ui|headed)(?![\w:-])/u,
-    what: "headed/interactive e2e run",
+    what: 'headed/interactive e2e run',
     reason:
       "Blocked headed/interactive e2e run: GUI windows on the shared desktop steal the owner's focus, " +
-      "and each one boots a full Electron app. These scripts are human-only.",
+      'and each one boots a full Electron app. These scripts are human-only.',
   },
 ];
 
@@ -104,26 +104,26 @@ const TAMPERING = [
   {
     pattern: /\bAGENT_GUARD_FORCE=/u,
     reason:
-      "Blocked AGENT_GUARD_FORCE: overriding admission control is a human-only escape hatch. A refused run means the " +
+      'Blocked AGENT_GUARD_FORCE: overriding admission control is a human-only escape hatch. A refused run means the ' +
       `machine does not have the memory right now — report the refusal instead of forcing past it. ${GUIDANCE}`,
   },
   {
     pattern: /\bAGENT_GUARD_ASSUME_HUMAN=/u,
     reason:
-      "Blocked AGENT_GUARD_ASSUME_HUMAN: this override exists so a human in an editor terminal is not mistaken for an " +
+      'Blocked AGENT_GUARD_ASSUME_HUMAN: this override exists so a human in an editor terminal is not mistaken for an ' +
       `agent. An agent setting it is claiming to be the owner. ${GUIDANCE}`,
   },
   {
     pattern: /\bAGENT_GUARD_STATE_DIR=/u,
     reason:
-      "Blocked AGENT_GUARD_STATE_DIR: redirecting the lease directory gives this session a private budget that no other " +
-      "repo or agent can see — which is exactly the per-worktree bug this guard replaced. It is for tests only.",
+      'Blocked AGENT_GUARD_STATE_DIR: redirecting the lease directory gives this session a private budget that no other ' +
+      'repo or agent can see — which is exactly the per-worktree bug this guard replaced. It is for tests only.',
   },
   {
     pattern: /\barbiter\.mjs\s+grant\b/u,
     reason:
-      "Blocked `arbiter.mjs grant`: the heavy-lane opt-in belongs to the owner. Ask them to run it; an agent granting " +
-      "itself permission is not permission.",
+      'Blocked `arbiter.mjs grant`: the heavy-lane opt-in belongs to the owner. Ask them to run it; an agent granting ' +
+      'itself permission is not permission.',
   },
   {
     // The wrapper sets this for its own children so nested guarded scripts do
@@ -133,7 +133,7 @@ const TAMPERING = [
     // does not name a live lease; this is the outer half of that pair.
     pattern: /\bAGENT_GUARDED=/u,
     reason:
-      "Blocked AGENT_GUARDED: that marker is set by the guard for its own children, and supplying it by hand claims to " +
+      'Blocked AGENT_GUARDED: that marker is set by the guard for its own children, and supplying it by hand claims to ' +
       `be inside a guarded run that does not exist — skipping admission entirely. ${GUIDANCE}`,
   },
 ];
@@ -171,14 +171,11 @@ function isWithin(child, parent) {
 // a leading `cd <path> &&` prefix (how agents run commands against another
 // checkout from the same session).
 export function resolveExecutionDir(cwd, command) {
-  if (typeof cwd !== "string" || cwd.length === 0) return null;
-  const match =
-    typeof command === "string"
-      ? /^\s*cd\s+(?:--\s+)?(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))\s*(?:&&|;)/u.exec(command)
-      : null;
+  if (typeof cwd !== 'string' || cwd.length === 0) return null;
+  const match = typeof command === 'string' ? /^\s*cd\s+(?:--\s+)?(?:"([^"]+)"|'([^']+)'|([^\s;&|]+))\s*(?:&&|;)/u.exec(command) : null;
   if (!match) return cwd;
   let target = match[1] ?? match[2] ?? match[3];
-  if (target.startsWith("~")) {
+  if (target.startsWith('~')) {
     const home = process.env.HOME;
     if (!home) return cwd;
     target = home + target.slice(1);
@@ -187,19 +184,15 @@ export function resolveExecutionDir(cwd, command) {
 }
 
 const QUOTED = /'[^']*'|"(?:[^"\\]|\\.)*"/u;
-const SHELL_C_TAIL =
-  /(?:^|[\s;&|(`{])(?:env\s+(?:\w+=\S*\s+)*)?(?:ba|da|z)?sh\s+(?:-\S+\s+)*-\S*c\s+$/u;
+const SHELL_C_TAIL = /(?:^|[\s;&|(`{])(?:env\s+(?:\w+=\S*\s+)*)?(?:ba|da|z)?sh\s+(?:-\S+\s+)*-\S*c\s+$/u;
 
 // Quotes are processed left to right: shell-wrapper payloads are unwrapped so
 // the patterns can see them, ordinary quoted text is blanked. Order matters — a
 // commit message that merely mentions `bash -c "npm run test:e2e"` is blanked
 // before its inner text is ever inspected.
 export function stripInertText(command) {
-  let scanned = "";
-  let rest = command.replace(
-    /<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?(\n\2(?=\n|$)|$)/gu,
-    " "
-  );
+  let scanned = '';
+  let rest = command.replace(/<<-?\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?(\n\2(?=\n|$)|$)/gu, ' ');
   for (let i = 0; i < 200; i += 1) {
     const match = QUOTED.exec(rest);
     if (!match) break;
@@ -207,9 +200,7 @@ export function stripInertText(command) {
     scanned += rest.slice(0, match.index);
     rest = rest.slice(match.index + quoted.length);
     if (SHELL_C_TAIL.test(scanned)) {
-      const inner = quoted.startsWith("'")
-        ? quoted.slice(1, -1)
-        : quoted.slice(1, -1).replace(/\\(["\\$`])/gu, "$1");
+      const inner = quoted.startsWith("'") ? quoted.slice(1, -1) : quoted.slice(1, -1).replace(/\\(["\\$`])/gu, '$1');
       rest = `${inner}${rest}`;
     } else {
       scanned += quoted.startsWith("'") ? "''" : '""';
@@ -220,15 +211,14 @@ export function stripInertText(command) {
 
 // Codex's shell tool submits argv arrays; the patterns match command text.
 export function normalizeCommand(command) {
-  if (Array.isArray(command) && command.every((part) => typeof part === "string"))
-    return command.join(" ");
+  if (Array.isArray(command) && command.every((part) => typeof part === 'string')) return command.join(' ');
   return command;
 }
 
 // npm's documented spellings for running a script. `npm run-script test:e2e`
 // is the same run as `npm run test:e2e`, and a matcher that only knows `run`
 // blocks one and waves the other through.
-const NPM_RUN_ALIASES = new Set(["run", "run-script", "rum", "urn"]);
+const NPM_RUN_ALIASES = new Set(['run', 'run-script', 'rum', 'urn']);
 
 /**
  * The script names an npm invocation would run, per shell segment.
@@ -250,7 +240,7 @@ export function npmScriptNames(command) {
     const rest = tokens.slice(start + 1);
     const aliasAt = rest.findIndex((token) => NPM_RUN_ALIASES.has(token));
     const candidates = aliasAt >= 0 ? rest.slice(aliasAt + 1) : rest;
-    const script = candidates.find((token) => !token.startsWith("-"));
+    const script = candidates.find((token) => !token.startsWith('-'));
     if (script !== undefined) names.push(script);
   }
   return names;
@@ -270,13 +260,13 @@ export function heavyLaneFor(command) {
     if (lane) return lane;
   }
   if (/\bplaywright\s+test\b|\btest-storybook\b/u.test(command)) {
-    return HEAVY_LANES.find((entry) => entry.id === "e2e");
+    return HEAVY_LANES.find((entry) => entry.id === 'e2e');
   }
   return null;
 }
 
 export function evaluateCommand(command, { env = process.env, now = Date.now() } = {}) {
-  if (typeof command !== "string" || command.length === 0) return { allow: true };
+  if (typeof command !== 'string' || command.length === 0) return { allow: true };
   const effective = stripInertText(command);
 
   for (const { pattern, reason } of TAMPERING) {
@@ -305,9 +295,7 @@ export function evaluateCommand(command, { env = process.env, now = Date.now() }
       if (pattern.test(segment)) {
         return {
           allow: false,
-          reason:
-            reason ??
-            `Blocked ${what}: it bypasses the machine-scoped memory guard. ${USE_ENTRYPOINT}`,
+          reason: reason ?? `Blocked ${what}: it bypasses the machine-scoped memory guard. ${USE_ENTRYPOINT}`,
         };
       }
     }
@@ -339,18 +327,17 @@ export function evaluateHookInput({ command, cwd }, projectDir, options = {}) {
 async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
-  return Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function respond(protocol, verdict) {
-  if (protocol === "cursor") {
+  if (protocol === 'cursor') {
     const body = verdict.allow
-      ? { permission: "allow" }
+      ? { permission: 'allow' }
       : {
-          permission: "deny",
+          permission: 'deny',
           agentMessage: verdict.reason,
-          userMessage:
-            "Blocked by the machine memory guard (see docs/reference/agent-memory-guard.md).",
+          userMessage: 'Blocked by the machine memory guard (see docs/reference/agent-memory-guard.md).',
         };
     process.stdout.write(`${JSON.stringify(body)}\n`);
     return;
@@ -359,31 +346,25 @@ function respond(protocol, verdict) {
     process.stdout.write(
       `${JSON.stringify({
         hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
           permissionDecisionReason: verdict.reason,
         },
-      })}\n`
+      })}\n`,
     );
   }
 }
 
 async function main() {
-  const protocol = process.argv.includes("--protocol=cursor")
-    ? "cursor"
-    : process.argv.includes("--protocol=codex")
-      ? "codex"
-      : "claude";
+  const protocol = process.argv.includes('--protocol=cursor') ? 'cursor' : process.argv.includes('--protocol=codex') ? 'codex' : 'claude';
   // This script lives in the checkout it protects, so its own location is the
   // authoritative project dir (CLAUDE_PROJECT_DIR matches for Claude Code;
   // Cursor and Codex set no equivalent).
-  const projectDir =
-    process.env.CLAUDE_PROJECT_DIR ?? dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+  const projectDir = process.env.CLAUDE_PROJECT_DIR ?? dirname(dirname(dirname(fileURLToPath(import.meta.url))));
   let verdict = { allow: true };
   try {
     const input = JSON.parse(await readStdin());
-    const command =
-      protocol === "cursor" ? input.command : normalizeCommand(input.tool_input?.command);
+    const command = protocol === 'cursor' ? input.command : normalizeCommand(input.tool_input?.command);
     verdict = evaluateHookInput({ command, cwd: input.cwd }, projectDir);
   } catch {
     // Fail open (see header).
@@ -391,7 +372,5 @@ async function main() {
   respond(protocol, verdict);
 }
 
-const invokedDirectly =
-  process.argv[1] &&
-  tryRealpath(resolve(process.argv[1])) === tryRealpath(fileURLToPath(import.meta.url));
+const invokedDirectly = process.argv[1] && tryRealpath(resolve(process.argv[1])) === tryRealpath(fileURLToPath(import.meta.url));
 if (invokedDirectly) await main();
