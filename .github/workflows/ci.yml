@@ -77,3 +77,16 @@ jobs:
         with:
           advanced-security: false
           version: "1.26.1"
+
+  # Code scanning runs from this repo's own workflow rather than GitHub's default
+  # setup, matching playbook-engineering. Default setup runs as the unselectable
+  # github-advanced-security[bot] actor, which sits outside the repository Actions
+  # Policy; a reusable workflow invoked from here stays inside it. Permissions are
+  # declared at the call site because a reusable workflow cannot widen its own.
+  codeql:
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
+    uses: ./.github/workflows/codeql.yml
