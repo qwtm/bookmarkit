@@ -11,3 +11,4 @@ src/assets
 # Reformatting them here would pass once and be reverted by the next sync, so
 # their formatting is owned upstream, not by this repo. See #123.
 tools/agent-guard
+tools/models
