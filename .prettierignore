@@ -6,3 +6,8 @@ THIRD-PARTY-NOTICES.md
 public/*.png
 public/vite.svg
 src/assets
+
+# Synced byte-identically from playbook-engineering and compared by blob SHA.
+# Reformatting them here would pass once and be reverted by the next sync, so
+# their formatting is owned upstream, not by this repo. See #123.
+tools/agent-guard
