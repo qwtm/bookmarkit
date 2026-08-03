@@ -38,6 +38,11 @@ user and setup guidance in [`README.md`](README.md), and release notes in
   documented need for them, release jobs do not restore mutable dependency
   caches, and the dedicated zizmor CI job uses an explicit scanner version while
   enforcing these rules.
+- Code scanning runs from this repo's own `.github/workflows/codeql.yml`, called
+  by CI — not from GitHub's default setup, which runs as the unselectable
+  `github-advanced-security[bot]` actor outside the repository Actions Policy.
+  The file is copied byte-identically from `playbook-engineering`; change it
+  there, not here. Do not enable default setup alongside it.
 - `npm run dev` is a development-mode build into `dist/`, not an HMR server.
   Rebuild and reload the extension after changes.
 - User-visible features and fixes need a Changeset. Documentation, tests, and
