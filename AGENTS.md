@@ -75,3 +75,23 @@ user and setup guidance in [`README.md`](README.md), and release notes in
 - [Repository baseline SOP](https://github.com/qwts/playbook-engineering/blob/main/docs/sop/repo-baseline-files.md)
   and [ENG-0006](https://github.com/qwts/playbook-engineering/blob/main/docs/decisions/ENG-0006-agentic-primitives-governance.md)
   — organization-wide rules inherited by this repository.
+
+<!-- governed:shared-agent-discovery:start -->
+
+## Shared agent conventions and skills
+
+PR-first workflow, validation-before-push, commit and PR hygiene, and the
+untrusted-input threat model are defined once, for every repo, in the
+[org-wide agent conventions](https://github.com/qwts/playbook-engineering/blob/main/docs/reference/agent-conventions.md).
+Before creating or copying a repo-local skill, consult the reviewed
+[shared agent skills](https://github.com/qwts/playbook-engineering/blob/74e775ef23d8e7d8f8e693ccc2329f430978c096/skills/README.md)
+index. Reuse only the pinned version supplied by the governed harness; a skill
+genuinely specific to this repository belongs in its local context.
+This repository is governed by
+[playbook-engineering](https://github.com/qwts/playbook-engineering) — its
+[shared SOPs](https://github.com/qwts/playbook-engineering/blob/main/docs/sop/README.md)
+and [engineering decisions](https://github.com/qwts/playbook-engineering/blob/main/docs/decisions/README.md)
+apply here by default
+([ENG-0008](https://github.com/qwts/playbook-engineering/blob/main/docs/decisions/ENG-0008-shared-sop-inheritance.md):
+inherit by default, vary by explicit delta).
+<!-- governed:shared-agent-discovery:end -->
