@@ -1,31 +1,106 @@
+# Lifecycle-aware validation inherited from playbook-engineering ENG-0004.
+# The immutable policy action is the fail-closed actor and fork boundary before
+# repository code is checked out or executed.
 name: CI
+run-name: CI ${{ github.event_name }} purpose=${{ inputs.purpose || 'automatic' }}
 
 on:
   pull_request:
-    branches:
-      - main
-  # Post-merge signal: merges land via admin bypass, so run the same gates on main itself.
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+    types: [checks_requested]
   push:
-    branches:
-      - main
-  # Manual lever for an arbitrary ref. The version branch no longer needs a
-  # dispatch: version-cut.yml opens that PR under chores-dumb / RELEASE_TOKEN, so
-  # it gets ordinary pull_request runs (contexts match by name across event types).
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      purpose:
+        description: Why the complete suite is being run manually
+        required: true
+        type: choice
+        options:
+          - exact-sha-preflight
+          - diagnostics
+          - release-recovery
+          - workflow-testing
+          - explicit-rerun
 
-# Cancel superseded PR runs. Main-push runs are keyed by SHA rather than ref: a shared ref group
-# would let GitHub replace the single queued run when merges land back-to-back, silently dropping
-# an intermediate commit's verdict. Per-SHA groups never collide.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.event_name == 'merge_group' && format('merge-group-{0}', github.event.merge_group.head_ref) || github.sha }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 permissions:
+  actions: read
   contents: read
+  pull-requests: read
 
 jobs:
-  ci:
-    name: CI
+  policy:
+    name: Action Policy
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.policy.outputs.mode }}
+      run_full: ${{ steps.policy.outputs.run_full }}
+      run_post_merge: ${{ steps.policy.outputs.run_post_merge }}
+    steps:
+      - id: policy
+        uses: qwts/playbook-engineering/.github/actions/ci-policy@4e70c773155c2c804e52a487352627010bea1897 # ci-policy 2026-08-03
+
+  merge-evidence:
+    name: Verify merged commit evidence
+    needs: policy
+    if: needs.policy.outputs.run_post_merge == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      validated: ${{ steps.evidence.outputs.validated }}
+    steps:
+      - id: evidence
+        name: Find successful merge-group CI for this exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A workflow run's `.name` is its evaluated run-name. `.path` is the
+          # stable identity of the canonical CI workflow.
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=merge_group&head_sha=$GITHUB_SHA&per_page=100" \
+            --jq 'first(.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .conclusion == "success") | .id) // empty')
+          validated=false
+          if [ -n "$run_id" ]; then
+            validated=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?filter=latest&per_page=100" \
+              --jq 'any(.jobs[]; .name == "CI" and .conclusion == "success")')
+          fi
+          echo "validated=$validated" >> "$GITHUB_OUTPUT"
+
+  preflight-evidence:
+    name: Verify preflight evidence
+    needs: policy
+    if: github.event_name == 'pull_request' && needs.policy.outputs.run_full == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      validated: ${{ steps.evidence.outputs.validated }}
+    steps:
+      - id: evidence
+        name: Find successful manual complete suite for the PR head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=workflow_dispatch&head_sha=$TARGET_SHA&per_page=100" \
+            --jq 'first(.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .display_title == "CI workflow_dispatch purpose=exact-sha-preflight" and .conclusion == "success") | .id) // empty')
+          validated=false
+          if [ -n "$run_id" ]; then
+            validated=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?filter=latest&per_page=100" \
+              --jq 'any(.jobs[]; .name == "CI" and .conclusion == "success")')
+          fi
+          echo "validated=$validated" >> "$GITHUB_OUTPUT"
+
+  complete:
+    name: Complete suite
+    needs: [policy, merge-evidence, preflight-evidence]
+    if: >-
+      always() && needs.policy.result == 'success' &&
+      ((needs.policy.outputs.run_full == 'true' && needs.preflight-evidence.outputs.validated != 'true') ||
+      (needs.policy.outputs.run_post_merge == 'true' && needs.merge-evidence.outputs.validated != 'true'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,21 +111,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          # Single source of truth: CI and local resolve Node from the same .nvmrc, so versions
-          # never drift. Bump .nvmrc to move them together.
           node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      # `npm run ci` is the entire gate (version policy, lint, tests, extension build) and is
-      # runnable locally — CI must not accumulate steps a contributor can't reproduce.
       - name: Run required validation
         run: npm run ci
 
-      # Package on every run so any PR or main commit has an installable build attached, with no
-      # clone-and-build required. Same zip release.yml publishes; this one just isn't tagged.
       - name: Package extension
         run: |
           node scripts/check-version-policy.mjs --built
@@ -65,6 +134,11 @@ jobs:
 
   zizmor:
     name: GitHub Actions security
+    needs: [policy, merge-evidence, preflight-evidence]
+    if: >-
+      always() && needs.policy.result == 'success' &&
+      ((needs.policy.outputs.run_full == 'true' && needs.preflight-evidence.outputs.validated != 'true') ||
+      (needs.policy.outputs.run_post_merge == 'true' && needs.merge-evidence.outputs.validated != 'true'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -78,15 +152,84 @@ jobs:
           advanced-security: false
           version: "1.26.1"
 
-  # Code scanning runs from this repo's own workflow rather than GitHub's default
-  # setup, matching playbook-engineering. Default setup runs as the unselectable
-  # github-advanced-security[bot] actor, which sits outside the repository Actions
-  # Policy; a reusable workflow invoked from here stays inside it. Permissions are
-  # declared at the call site because a reusable workflow cannot widen its own.
   codeql:
+    name: Advanced CodeQL
+    needs: [policy, merge-evidence, preflight-evidence]
+    if: >-
+      always() && needs.policy.result == 'success' &&
+      (needs.policy.outputs.run_post_merge == 'true' ||
+      (needs.policy.outputs.run_full == 'true' && needs.preflight-evidence.outputs.validated != 'true'))
     permissions:
       actions: read
       contents: read
       packages: read
       security-events: write
     uses: ./.github/workflows/codeql.yml
+
+  post-merge:
+    name: Post-merge smoke
+    needs: [policy, merge-evidence]
+    if: needs.policy.outputs.run_post_merge == 'true' && needs.merge-evidence.outputs.validated == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Chrome extension smoke
+        run: npm run build:chrome
+
+  gate:
+    name: CI
+    needs: [policy, merge-evidence, preflight-evidence, complete, zizmor, codeql, post-merge]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce the selected lifecycle lane
+        env:
+          MODE: ${{ needs.policy.outputs.mode }}
+          POLICY: ${{ needs.policy.result }}
+          COMPLETE: ${{ needs.complete.result }}
+          ZIZMOR: ${{ needs.zizmor.result }}
+          CODEQL: ${{ needs.codeql.result }}
+          PREFLIGHT: ${{ needs.preflight-evidence.result }}
+          PREFLIGHT_VALIDATED: ${{ needs.preflight-evidence.outputs.validated }}
+          MERGE_VALIDATED: ${{ needs.merge-evidence.outputs.validated }}
+          POST_MERGE: ${{ needs.post-merge.result }}
+        run: |
+          test "$POLICY" = success
+          case "$MODE" in
+            full)
+              if [ "$PREFLIGHT_VALIDATED" = true ]; then
+                test "$PREFLIGHT" = success
+              else
+                test "$COMPLETE" = success
+                test "$ZIZMOR" = success
+                test "$CODEQL" = success
+              fi
+              ;;
+            queue|manual)
+              test "$COMPLETE" = success
+              test "$ZIZMOR" = success
+              test "$CODEQL" = success
+              ;;
+            post-merge)
+              test "$CODEQL" = success
+              if [ "$MERGE_VALIDATED" = true ]; then
+                test "$POST_MERGE" = success
+              else
+                test "$COMPLETE" = success
+                test "$ZIZMOR" = success
+              fi
+              ;;
+            *) exit 1 ;;
+          esac

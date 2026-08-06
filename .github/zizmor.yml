@@ -4,7 +4,6 @@ rules:
       # Dedicated automation credentials for the version branch and tag jobs;
       # their triggers and permissions constrain their use.
       allow:
-        - RELEASE_TOKEN
         - CHORES_DUMB_CLIENT_ID
         - CHORES_DUMB_PRIVATE_KEY
   unpinned-uses:

@@ -9,12 +9,23 @@ on:
 
 permissions:
   contents: read
-  issues: write
   pull-requests: read
 
 jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: qwts/playbook-engineering/.github/actions/ci-policy@4e70c773155c2c804e52a487352627010bea1897 # ci-policy 2026-08-03
+        with:
+          authorization-only: "true"
+
   close-linked-issues:
     name: Close linked issues
+    needs: policy
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
     # Keep in sync with TARGET_BASE_REFS in scripts/close-linked-issues.mjs.
     if: |
       github.event.pull_request.merged == true &&

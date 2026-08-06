@@ -570,18 +570,41 @@ something saved yesterday has not been ignored.
 
 ## Scripts
 
-| Script                     | What it does                                                         |
-| -------------------------- | -------------------------------------------------------------------- |
-| `npm run dev`              | Sourcemapped, unminified build to `dist/`. **Not** a dev server.     |
-| `npm run build`            | Production build to `dist/`.                                         |
-| `npm run build:chrome`     | Production build + copies the extension files into `dist/`.          |
-| `npm run preview`          | Serves `dist/` over HTTP (see the caveat under Build from source).   |
-| `npm run lint`             | ESLint.                                                              |
-| `npm test`                 | Vitest suite once (`npm run test:watch` to watch).                   |
-| `npm run ci`               | The full gate CI runs: version policy, lint, tests, extension build. |
-| `npm run changeset`        | Record a changeset describing a user-facing change.                  |
-| `npm run licenses:notices` | Regenerate locked production dependency notices.                     |
-| `npm run package:release`  | Build and package `release/bookmarkit-v<version>.zip` + checksum.    |
+| Script                     | What it does                                                           |
+| -------------------------- | ---------------------------------------------------------------------- |
+| `npm run dev`              | Sourcemapped, unminified build to `dist/`. **Not** a dev server.       |
+| `npm run build`            | Production build to `dist/`.                                           |
+| `npm run build:chrome`     | Production build + copies the extension files into `dist/`.            |
+| `npm run preview`          | Serves `dist/` over HTTP (see the caveat under Build from source).     |
+| `npm run lint`             | ESLint.                                                                |
+| `npm test`                 | Vitest suite once (`npm run test:watch` to watch).                     |
+| `npm run ci`               | The full local gate: policy, notices, format, lint, tests, and builds. |
+| `npm run changeset`        | Record a changeset describing a user-facing change.                    |
+| `npm run licenses:notices` | Regenerate locked production dependency notices.                       |
+| `npm run package:release`  | Build and package `release/bookmarkit-v<version>.zip` + checksum.      |
+
+## CI lifecycle
+
+Draft pull requests do not start GitHub Actions jobs. Before marking a PR ready,
+run `npm run ci` locally. A maintainer may also dispatch **CI** against the
+feature branch with purpose `exact-sha-preflight`; the ready event reuses that
+run only when its stable `CI` job succeeded for the PR's exact head SHA.
+Otherwise the ready event runs the complete suite, packaging, zizmor, and
+Advanced CodeQL. Updating a ready branch cancels its obsolete run and validates
+the new head.
+
+Because this is a user-owned repository, `chores-dumb[bot]` keeps non-draft
+repository branches current by merging `main` through GitHub's update-branch
+API. Strict required checks prevent a stale green head from merging. Public-fork
+runs are never approved; an accepted external change must be moved to an
+allowed repository-owned branch. The immutable shared policy checks both the
+runtime and triggering actors before any direct workflow checks out repository
+code.
+
+Every new `main` SHA still gets evidence for that exact commit. When successful
+merge-candidate evidence is unavailable, CI runs the full suite as a fallback.
+Code scanning uses this repository's Advanced CodeQL workflow for Actions and
+JavaScript/TypeScript; GitHub default setup must remain disabled.
 
 ## Releasing
 
@@ -594,10 +617,11 @@ Releases are automated; nobody tags or uploads by hand.
 3. Merging _that_ PR is the release action: it tags `v<version>` and triggers **Release**, which
    re-runs the full gate against the tag and publishes the zip + `.sha256` to a GitHub Release.
 
-Version cut authenticates as `chores-dumb[bot]` (falling back to the `RELEASE_TOKEN` secret)
-so the version PR and the tag push are allowed under this repository's Actions actor policy.
-`github-actions[bot]` is not on that allow list, so a `GITHUB_TOKEN` handoff cannot start
-Release or CI on the version branch.
+Version cut authenticates only as `chores-dumb[bot]`; missing App credentials
+fail closed before a repository write. This keeps the version PR and tag push
+inside the Actions actor policy. `github-actions[bot]` is not on that allow
+list, so a `GITHUB_TOKEN` handoff cannot start Release or CI on the version
+branch.
 
 `npm run check:version-policy` enforces that the three version artifacts never drift apart — a
 manifest that disagrees with `package.json` would ship a build that lies about its own version.
