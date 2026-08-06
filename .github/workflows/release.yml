@@ -17,18 +17,28 @@ concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
-# Normally dispatched by version-cut.yml after it creates the version tag. The tag trigger also
-# covers tags pushed by humans; workflow_dispatch is the recovery path for GITHUB_TOKEN tags,
-# whose pushes do not trigger another workflow. Every build checks out the tag, never main.
+# Normally started by the chores-dumb tag created by version-cut.yml. The tag
+# trigger also covers tags pushed by humans; workflow_dispatch is the recovery
+# path for an existing stranded tag. Every build checks out the tag, never main.
 # This workflow publishes GitHub Release assets only — it does not merge version PRs or submit
 # to the Chrome Web Store.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: qwts/playbook-engineering/.github/actions/ci-policy@4e70c773155c2c804e52a487352627010bea1897 # ci-policy 2026-08-03
+        with:
+          authorization-only: "true"
+
   release:
+    needs: policy
     name: Validate and cut release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Resolve release tag
         id: release
