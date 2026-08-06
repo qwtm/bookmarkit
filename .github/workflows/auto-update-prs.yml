@@ -8,7 +8,7 @@ on:
     branches:
       - main
   pull_request_target:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -52,7 +52,7 @@ jobs:
           GH_TOKEN: ${{ steps.chores.outputs.token }}
           REPO: ${{ github.repository }}
         run: |
-          gh pr list --repo "$REPO" --state open \
+          gh pr list --repo "$REPO" --state open --limit 1000 \
             --json number,isDraft,headRefName,headRefOid,headRepositoryOwner \
             --jq '.[] | select(.isDraft | not)
                       | select(.headRepositoryOwner.login == "'"${REPO%%/*}"'")

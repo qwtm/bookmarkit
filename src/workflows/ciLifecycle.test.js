@@ -75,11 +75,13 @@ describe("governed CI lifecycle", () => {
 
   test("keeps ready branches current only through fail-closed chores-dumb writes", () => {
     expect(autoUpdate).toMatch(/^ {2}pull_request_target:$/mu);
+    expect(autoUpdate).toMatch(/types: \[opened, synchronize, reopened, ready_for_review\]/u);
     expect(autoUpdate).toMatch(/pull_request_target is safe here|never checks out PR code/u);
     expect(autoUpdate).toContain("pulls/$number/update-branch");
     expect(autoUpdate).toContain("expected_head_sha");
     expect(autoUpdate).toContain("dependabot/");
     expect(autoUpdate).toContain("changeset-release/");
+    expect(autoUpdate).toContain("--limit 1000");
     for (const workflow of [autoUpdate, versionCut]) {
       expect(workflow).toMatch(
         /secrets\.CHORES_DUMB_CLIENT_ID != '' && secrets\.CHORES_DUMB_PRIVATE_KEY != ''/u
