@@ -74,9 +74,13 @@ describe("governed CI lifecycle", () => {
   });
 
   test("keeps ready branches current only through fail-closed chores-dumb writes", () => {
-    expect(autoUpdate).toMatch(/^ {2}pull_request_target:$/mu);
+    expect(autoUpdate).toMatch(
+      /^ {2}pull_request_target: # zizmor: ignore\[dangerous-triggers\]$/mu
+    );
     expect(autoUpdate).toMatch(/types: \[opened, synchronize, reopened, ready_for_review\]/u);
     expect(autoUpdate).toMatch(/pull_request_target is safe here|never checks out PR code/u);
+    expect(autoUpdate).toMatch(/permission-contents: write/u);
+    expect(autoUpdate).toMatch(/permission-pull-requests: write/u);
     expect(autoUpdate).toContain("pulls/$number/update-branch");
     expect(autoUpdate).toContain("expected_head_sha");
     expect(autoUpdate).toContain("dependabot/");
