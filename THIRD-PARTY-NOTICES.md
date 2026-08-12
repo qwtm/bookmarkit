@@ -83,7 +83,7 @@ current.
 | `http-parser-js` | 0.5.10 | MIT |
 | `idb` | 7.1.1 | ISC |
 | `is-fullwidth-code-point` | 3.0.0 | MIT |
-| `js-yaml` | 4.3.0 | MIT |
+| `js-yaml` | 4.3.1 | MIT |
 | `lodash.camelcase` | 4.3.0 | MIT |
 | `long` | 5.3.2 | Apache-2.0 |
 | `memoize-one` | 5.2.1 | MIT |
@@ -1918,7 +1918,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ---
 
-## js-yaml 4.3.0
+## js-yaml 4.3.1
 
 License: MIT
 
