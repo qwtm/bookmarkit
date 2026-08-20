@@ -12,7 +12,8 @@ const codeql = read(".github/workflows/codeql.yml");
 const release = read(".github/workflows/release.yml");
 const versionCut = read(".github/workflows/version-cut.yml");
 const policyRevision =
-  "qwts/playbook-engineering/.github/actions/ci-policy@4e70c773155c2c804e52a487352627010bea1897";
+  "qwts/playbook-engineering/.github/actions/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6";
+const runtimeRevision = "5455a3f5939369ea843b1bbb4d2573739f4381a6";
 
 describe("governed CI lifecycle", () => {
   test("uses lifecycle triggers and PR-scoped cancellation", () => {
@@ -51,7 +52,6 @@ describe("governed CI lifecycle", () => {
 
   test("preserves the complete suite, packaging, security, and stable CI gate", () => {
     for (const command of [
-      "npm ci",
       "npm run ci",
       "node scripts/check-version-policy.mjs --built",
       "node scripts/package-release.mjs",
@@ -62,6 +62,26 @@ describe("governed CI lifecycle", () => {
     expect(ci).toMatch(/^ {2}zizmor:\n {4}name: GitHub Actions security$/mu);
     expect(ci).toMatch(/^ {2}gate:\n {4}name: CI$/mu);
     expect(ci).toMatch(/name: Post-merge smoke/u);
+    expect(ci).toContain(`bounded-command@${runtimeRevision}`);
+    expect(ci).toContain(`ref: ${runtimeRevision}`);
+    expect(ci).toContain("name: Workflow runtime policy");
+    expect(ci).toContain('test "$WORKFLOW_RUNTIME" = success');
+  });
+
+  test("bounds every job and dependency install", () => {
+    for (const workflow of [ci, autoUpdate, closeLinkedIssues, codeql, release, versionCut]) {
+      const jobs = workflow.split(/^jobs:\s*$/mu)[1];
+      const starts = [...jobs.matchAll(/^ {2}[a-z][a-z0-9-]*:\s*$/gmu)];
+      for (const [index, start] of starts.entries()) {
+        const body = jobs.slice(start.index, starts[index + 1]?.index);
+        if (!/^ {4}uses:/mu.test(body)) {
+          expect(body).toMatch(/^ {4}timeout-minutes: [1-9][0-9]*$/mu);
+        }
+      }
+    }
+    for (const workflow of [ci, release, versionCut]) {
+      expect(workflow).not.toMatch(/^\s*run:\s*npm ci\s*$/gmu);
+    }
   });
 
   test("runs governed Advanced CodeQL for both configured languages", () => {
