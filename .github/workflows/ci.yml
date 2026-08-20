@@ -39,19 +39,21 @@ jobs:
     name: Action Policy
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       mode: ${{ steps.policy.outputs.mode }}
       run_full: ${{ steps.policy.outputs.run_full }}
       run_post_merge: ${{ steps.policy.outputs.run_post_merge }}
     steps:
       - id: policy
-        uses: qwts/playbook-engineering/.github/actions/ci-policy@4e70c773155c2c804e52a487352627010bea1897 # ci-policy 2026-08-03
+        uses: qwts/playbook-engineering/.github/actions/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6 # ci-policy 2026-08-20
 
   merge-evidence:
     name: Verify merged commit evidence
     needs: policy
     if: needs.policy.outputs.run_post_merge == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       validated: ${{ steps.evidence.outputs.validated }}
     steps:
@@ -76,6 +78,7 @@ jobs:
     needs: policy
     if: github.event_name == 'pull_request' && needs.policy.outputs.run_full == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       validated: ${{ steps.evidence.outputs.validated }}
     steps:
@@ -102,6 +105,7 @@ jobs:
       ((needs.policy.outputs.run_full == 'true' && needs.preflight-evidence.outputs.validated != 'true') ||
       (needs.policy.outputs.run_post_merge == 'true' && needs.merge-evidence.outputs.validated != 'true'))
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -115,7 +119,14 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        uses: qwts/playbook-engineering/.github/actions/bounded-command@5455a3f5939369ea843b1bbb4d2573739f4381a6 # bounded-command 2026-08-20
+        with:
+          task: Install complete-suite dependencies
+          executable: npm
+          arguments-json: '["ci"]'
+          timeout-seconds: "600"
+          attempts: "2"
+          retry-delay-seconds: "5"
 
       - name: Run required validation
         run: npm run ci
@@ -140,6 +151,7 @@ jobs:
       ((needs.policy.outputs.run_full == 'true' && needs.preflight-evidence.outputs.validated != 'true') ||
       (needs.policy.outputs.run_post_merge == 'true' && needs.merge-evidence.outputs.validated != 'true'))
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -166,11 +178,35 @@ jobs:
       security-events: write
     uses: ./.github/workflows/codeql.yml
 
+  workflow-runtime:
+    name: Workflow runtime policy
+    needs: policy
+    if: needs.policy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact validation commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Checkout pinned runtime checker
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: qwts/playbook-engineering
+          ref: 5455a3f5939369ea843b1bbb4d2573739f4381a6
+          path: .ci-runtime-policy
+          sparse-checkout: tools/ci-runtime
+          persist-credentials: false
+      - name: Enforce bounded workflow runtime
+        run: node .ci-runtime-policy/tools/ci-runtime/runtime-policy.mjs --root "$GITHUB_WORKSPACE"
+
   post-merge:
     name: Post-merge smoke
     needs: [policy, merge-evidence]
     if: needs.policy.outputs.run_post_merge == 'true' && needs.merge-evidence.outputs.validated == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -183,21 +219,40 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Install dependencies
-        run: npm ci
+        uses: qwts/playbook-engineering/.github/actions/bounded-command@5455a3f5939369ea843b1bbb4d2573739f4381a6 # bounded-command 2026-08-20
+        with:
+          task: Install smoke dependencies
+          executable: npm
+          arguments-json: '["ci"]'
+          timeout-seconds: "600"
+          attempts: "2"
+          retry-delay-seconds: "5"
 
       - name: Build Chrome extension smoke
         run: npm run build:chrome
 
   gate:
     name: CI
-    needs: [policy, merge-evidence, preflight-evidence, complete, zizmor, codeql, post-merge]
+    needs:
+      [
+        policy,
+        merge-evidence,
+        preflight-evidence,
+        complete,
+        zizmor,
+        codeql,
+        workflow-runtime,
+        post-merge,
+      ]
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Enforce the selected lifecycle lane
         env:
           MODE: ${{ needs.policy.outputs.mode }}
           POLICY: ${{ needs.policy.result }}
+          WORKFLOW_RUNTIME: ${{ needs.workflow-runtime.result }}
           COMPLETE: ${{ needs.complete.result }}
           ZIZMOR: ${{ needs.zizmor.result }}
           CODEQL: ${{ needs.codeql.result }}
@@ -207,6 +262,7 @@ jobs:
           POST_MERGE: ${{ needs.post-merge.result }}
         run: |
           test "$POLICY" = success
+          test "$WORKFLOW_RUNTIME" = success
           case "$MODE" in
             full)
               if [ "$PREFLIGHT_VALIDATED" = true ]; then

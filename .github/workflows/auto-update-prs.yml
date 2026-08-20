@@ -23,8 +23,9 @@ concurrency:
 jobs:
   policy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: qwts/playbook-engineering/.github/actions/ci-policy@4e70c773155c2c804e52a487352627010bea1897 # ci-policy 2026-08-03
+      - uses: qwts/playbook-engineering/.github/actions/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6 # ci-policy 2026-08-20
         with:
           authorization-only: "true"
 
@@ -32,6 +33,7 @@ jobs:
     needs: policy
     name: Merge main into open PRs
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       pull-requests: read

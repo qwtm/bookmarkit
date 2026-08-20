@@ -28,8 +28,9 @@ permissions:
 jobs:
   policy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: qwts/playbook-engineering/.github/actions/ci-policy@4e70c773155c2c804e52a487352627010bea1897 # ci-policy 2026-08-03
+      - uses: qwts/playbook-engineering/.github/actions/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6 # ci-policy 2026-08-20
         with:
           authorization-only: "true"
 
@@ -37,6 +38,7 @@ jobs:
     needs: policy
     name: Validate and cut release
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
@@ -84,7 +86,14 @@ jobs:
           package-manager-cache: false
 
       - name: Install dependencies
-        run: npm ci
+        uses: qwts/playbook-engineering/.github/actions/bounded-command@5455a3f5939369ea843b1bbb4d2573739f4381a6 # bounded-command 2026-08-20
+        with:
+          task: Install release dependencies
+          executable: npm
+          arguments-json: '["ci"]'
+          timeout-seconds: "600"
+          attempts: "2"
+          retry-delay-seconds: "5"
 
       # Re-run the full gate against the tag itself. CI passing on main is not proof the tagged
       # tree is green — the tag is what users install.
