@@ -46,7 +46,7 @@ jobs:
       run_post_merge: ${{ steps.policy.outputs.run_post_merge }}
     steps:
       - id: policy
-        uses: qwts/playbook-engineering/.github/actions/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6
+        uses: qwts/playbook-engineering/.github/actions/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6 # v1
 
   merge-evidence:
     name: Verify merged commit evidence
@@ -119,7 +119,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        uses: qwts/playbook-engineering/.github/actions/bounded-command@5455a3f5939369ea843b1bbb4d2573739f4381a6
+        uses: qwts/playbook-engineering/.github/actions/bounded-command@5455a3f5939369ea843b1bbb4d2573739f4381a6 # v1
         with:
           task: Install complete-suite dependencies
           executable: npm
@@ -219,7 +219,7 @@ jobs:
           node-version-file: .nvmrc
 
       - name: Install dependencies
-        uses: qwts/playbook-engineering/.github/actions/bounded-command@5455a3f5939369ea843b1bbb4d2573739f4381a6
+        uses: qwts/playbook-engineering/.github/actions/bounded-command@5455a3f5939369ea843b1bbb4d2573739f4381a6 # v1
         with:
           task: Install smoke dependencies
           executable: npm
